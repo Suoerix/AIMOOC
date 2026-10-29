@@ -17,6 +17,11 @@ export function Sidebar({ className, currentTime = 0, currentPage = 1, parts = [
   const currentPath = router.pathname
   const learningId = router.query.id
   const [progress, setProgress] = useState(0)
+  const [lastLearningId, setLastLearningId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLastLearningId(getLastLearningId())
+  }, [])
 
   // 计算总进度
   useEffect(() => {
@@ -77,7 +82,7 @@ export function Sidebar({ className, currentTime = 0, currentPage = 1, parts = [
         <div className="space-y-1 p-4">
           <h2 className="mb-2 px-2 text-lg font-semibold">课程</h2>
           <Link 
-            href={`/learn/${learningId || getLastLearningId()}`}
+            href={`/learn/${learningId || lastLearningId || ''}`}
             className={cn(
               "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800",
               isActive('/learn') && "bg-gray-100 text-blue-600 dark:bg-gray-800 dark:text-blue-400"

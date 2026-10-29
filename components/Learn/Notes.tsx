@@ -1,7 +1,7 @@
 import { FC, useEffect, useState } from 'react'
 import { FileText, ThumbsUp, ThumbsDown, MessageCircle, Save, Edit, Loader2 } from 'lucide-react'
 import { Button } from '~/components/ui/button'
-import { getBiliNotes } from '~/lib/bilibili/getNotes'
+import { getBiliCookie } from '~/lib/bilibili/auth'
 import { formatTime } from '~/utils/formatTime'
 
 interface NotesProps {
@@ -86,13 +86,45 @@ const Notes: FC<NotesProps> = ({ url, onTimeClick }) => {
       }
 
       setLoading(true)
+      setError('')
       try {
-        const notesContent = await getBiliNotes(videoUrl)
-        setNotes(notesContent)
-        localStorage.setItem(cacheKey, notesContent)
-      } catch (err) {
+        const response = await fetch('/api/bilibili/notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: videoUrl, cookie: getBiliCookie() || '' }),
+        })
+
+        if (!response.ok) {
+          const errJson = await response.json().catch(() => null)
+          throw new Error(errJson?.error || `请求失败（${response.status}）`)
+        }
+
+        const data = response.body
+        if (!data) {
+          throw new Error('响应流为空')
+        }
+
+        const reader = data.getReader()
+        const decoder = new TextDecoder()
+        let fullText = ''
+        let done = false
+
+        while (!done) {
+          const { value, done: doneReading } = await reader.read()
+          done = doneReading
+          const chunkValue = decoder.decode(value)
+          if (chunkValue) {
+            fullText += chunkValue
+            setNotes(fullText)
+          }
+        }
+
+        if (fullText) {
+          localStorage.setItem(cacheKey, fullText)
+        }
+      } catch (err: any) {
         console.error('获取笔记失败:', err)
-        setError('获取笔记失败，请重试')
+        setError(err?.message || '获取笔记失败，请重试')
       } finally {
         setLoading(false)
       }

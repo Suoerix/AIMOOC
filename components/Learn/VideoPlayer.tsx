@@ -184,7 +184,7 @@ export function VideoPlayer({ videoRef, videoInfo, loading, onTimeUpdate }: Vide
             )}
 
             {videoInfo?.embedUrl ? (
-              videoInfo.embedUrl.startsWith('blob:') ? (
+              videoInfo.embedUrl.startsWith('blob:') || videoInfo.embedUrl.startsWith('/api/') ? (
                 <>
                   <video
                     ref={videoRef}
@@ -212,9 +212,9 @@ export function VideoPlayer({ videoRef, videoInfo, loading, onTimeUpdate }: Vide
                   sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
                 />
               )
-            ) : (
+            ) : !loading ? (
               <div className="flex h-full items-center justify-center text-gray-500">无法加载视频</div>
-            )}
+            ) : null}
           </div>
         </div>
 
