@@ -14,10 +14,12 @@ export default async function handler(
   try {
     const response = await biliFetchRaw(
       'https://api.bilibili.com/x/web-interface/view?bvid=BV1GJ411x7h7',
-      biliHeaders()
+      biliHeaders(),
+      { withBuvid: true }
     )
     const text = await response.text()
     result.upstreamStatus = response.status
+    result.buvidAttached = !!req.headers.cookie || true
     result.bodySnippet = text.slice(0, 300)
   } catch (error: any) {
     result.fetchError = {

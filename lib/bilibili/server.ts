@@ -1,6 +1,6 @@
 import { SubtitleData, VideoInfo, VideoPage } from '~/lib/types'
 
-const BILIBILI_API = 'https://api.bilibili.com'
+const BILIBILI_API = process.env.BILIBILI_API_BASE || 'https://api.bilibili.com'
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
@@ -20,9 +20,51 @@ function getProxyDispatcher(): unknown | undefined {
   }
 }
 
-export async function biliFetchRaw(url: string, headers: Record<string, string>): Promise<Response> {
+let cachedBuvidCookie: string | null | undefined
+
+function randomBuvid3(): string {
+  const hex = () =>
+    Array.from({ length: 6 }, () =>
+      '0123456789ABCDEF'[Math.floor(Math.random() * 16)]
+    ).join('')
+  return `XY${hex()}${hex()}${hex()}${hex()}infoc`
+}
+
+async function getBuvidCookie(): Promise<string | null> {
+  if (cachedBuvidCookie !== undefined) return cachedBuvidCookie
+  try {
+    const response = await biliFetchRaw('https://www.bilibili.com/', {
+      'User-Agent': USER_AGENT,
+      Accept: 'text/html,application/xhtml+xml',
+    })
+    const headers = response.headers as Headers & { getSetCookie?: () => string[] }
+    const setCookies =
+      typeof headers.getSetCookie === 'function' ? headers.getSetCookie() : []
+    const buvid = setCookies
+      .map((raw: string) => raw.split(';')[0].trim())
+      .filter((kv: string) => /^(buvid3|b_nut|b_lsid)=/i.test(kv))
+    cachedBuvidCookie = buvid.length ? buvid.join('; ') : null
+  } catch {
+    cachedBuvidCookie = null
+  }
+  return cachedBuvidCookie
+}
+
+export async function biliFetchRaw(
+  url: string,
+  headers: Record<string, string>,
+  opts: { withBuvid?: boolean } = {}
+): Promise<Response> {
   const dispatcher = getProxyDispatcher()
   const init: RequestInit & { dispatcher?: unknown } = { headers, redirect: 'follow' }
+
+  if (opts.withBuvid && !headers.Cookie) {
+    const buvid = await getBuvidCookie()
+    if (buvid) {
+      init.headers = { ...headers, Cookie: buvid }
+    }
+  }
+
   if (dispatcher) {
     init.dispatcher = dispatcher
   }
@@ -80,7 +122,9 @@ interface BiliApiResponse<T> {
 }
 
 async function biliFetch<T>(path: string, cookie?: string): Promise<T> {
-  const response = await biliFetchRaw(`${BILIBILI_API}${path}`, biliHeaders(cookie))
+  const response = await biliFetchRaw(`${BILIBILI_API}${path}`, biliHeaders(cookie), {
+    withBuvid: true,
+  })
   if (!response.ok) {
     throw new Error(`Bilibili API request failed: ${response.status}`)
   }

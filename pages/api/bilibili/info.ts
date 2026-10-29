@@ -14,7 +14,8 @@ export default async function handler(
   try {
     const response = await biliFetchRaw(
       `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`,
-      biliHeaders()
+      biliHeaders(),
+      { withBuvid: true }
     )
 
     if (!response.ok) {
