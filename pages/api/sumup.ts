@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { getOpenAIClient, OPENAI_MODEL } from '~/lib/openai'
+import { getOpenAIClient, withRetry, OPENAI_MODEL } from '~/lib/openai'
 import { buildSummarizePrompt, subtitlesToText } from '~/lib/ai/prompts'
 import { getCache, setCache } from '~/lib/cache'
 import { fetchSubtitles } from '~/lib/bilibili/server'
@@ -47,15 +47,17 @@ export default async function handler(
 
   try {
     const client = getOpenAIClient()
-    const stream = await client.chat.completions.create({
-      model: OPENAI_MODEL,
-      messages: [
-        { role: 'system', content: buildSummarizePrompt(videoConfig) },
-        { role: 'user', content: `视频字幕如下：\n\n${transcript}` },
-      ],
-      temperature: 0.4,
-      stream: true,
-    })
+    const stream = await withRetry(() =>
+      client.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: [
+          { role: 'system', content: buildSummarizePrompt(videoConfig) },
+          { role: 'user', content: `视频字幕如下：\n\n${transcript}` },
+        ],
+        temperature: 0.4,
+        stream: true,
+      })
+    )
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8')
     res.setHeader('Cache-Control', 'no-cache')
@@ -77,8 +79,13 @@ export default async function handler(
     }
   } catch (error: any) {
     console.error('Error summarizing:', error)
+    const status = error?.status || 500
+    const message =
+      status === 429
+        ? 'AI 服务请求频率/配额超限（429），请稍后重试或检查 API key 配额'
+        : error?.message || 'Summarize failed'
     if (!res.headersSent) {
-      res.status(500).json({ errorMessage: error?.message || 'Summarize failed' })
+      res.status(status).json({ errorMessage: `AI 服务错误（${status}）: ${message}` })
     } else {
       res.end()
     }

@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { getOpenAIClient, OPENAI_MODEL } from '~/lib/openai'
+import { getOpenAIClient, withRetry, OPENAI_MODEL } from '~/lib/openai'
 import { CHAT_SYSTEM_PROMPT } from '~/lib/ai/prompts'
 
 export const maxDuration = 60
@@ -24,11 +24,13 @@ export default async function handler(
 
   try {
     const client = getOpenAIClient()
-    const stream = await client.chat.completions.create({
-      model: OPENAI_MODEL,
-      messages: [{ role: 'system', content: CHAT_SYSTEM_PROMPT }, ...messages],
-      stream: true,
-    })
+    const stream = await withRetry(() =>
+      client.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: [{ role: 'system', content: CHAT_SYSTEM_PROMPT }, ...messages],
+        stream: true,
+      })
+    )
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8')
     res.setHeader('Cache-Control', 'no-cache')
@@ -43,8 +45,10 @@ export default async function handler(
     res.end()
   } catch (error: any) {
     console.error('Error in chat:', error)
+    const status = error?.status || 500
+    const message = error?.message || 'Chat failed'
     if (!res.headersSent) {
-      res.status(500).json({ error: error?.message || 'Chat failed' })
+      res.status(status).json({ error: `AI 服务错误（${status}）: ${message}` })
     } else {
       res.end()
     }

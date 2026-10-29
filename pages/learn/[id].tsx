@@ -45,67 +45,65 @@ const LearnPage: NextPage<{
     const { url, config } = JSON.parse(savedData)
 
     async function fetchVideoInfo() {
+      if (!url.includes('bilibili.com')) {
+        toast.error('暂不支持该视频链接，请使用 bilibili.com 或 b23.tv 完整链接')
+        setState((prev) => ({ ...prev, loading: false, listLoading: false }))
+        return
+      }
+
+      const bvid = extractUrl(url)
+      if (!bvid) {
+        toast.error('无法从链接中解析视频ID，请检查链接格式')
+        setState((prev) => ({ ...prev, loading: false, listLoading: false }))
+        return
+      }
+
+      const page = extractPage(url, new URLSearchParams(url.split('?')[1]))
+
       try {
-        if (url.includes('bilibili.com')) {
-          const bvid = extractUrl(url)
-          const page = extractPage(url, new URLSearchParams(url.split('?')[1]))
+        // 先获取视频信息
+        const info = await getVideoInfo(bvid)
+        setState((prev) => ({
+          ...prev,
+          videoInfo: {
+            ...info,
+            service: VideoService.Bilibili,
+            videoId: bvid,
+            embedUrl: '', // 先设置为空
+            page: page ? Number(page) : 1,
+          },
+          listLoading: false,
+        }))
 
-          if (bvid) {
-            try {
-              // 先获取视频信息
-              const info = await getVideoInfo(bvid)
-              setState((prev) => ({
-                ...prev,
-                videoInfo: {
-                  ...info,
-                  service: VideoService.Bilibili,
-                  videoId: bvid,
-                  embedUrl: '', // 先设置为空
-                  page: page ? Number(page) : 1,
-                },
-                listLoading: false,
-              }))
+        // 获取视频
+        setState((prev) => ({ ...prev, loading: true }))
+        const videoUrl = await getBiliVideo(url)
 
-              // 获取视频
-              setState((prev) => ({ ...prev, loading: true }))
-              const videoUrl = await getBiliVideo(url)
-
-              // 更新视频URL
-              setState((prev) => ({
-                ...prev,
-                loading: false,
-                videoInfo: prev.videoInfo
-                  ? {
-                      ...prev.videoInfo,
-                      embedUrl: videoUrl,
-                    }
-                  : null,
-              }))
-
-              // 获取字幕
-              const subtitles = await getBiliSubtitles(url)
-              setState((prev) => ({
-                ...prev,
-                subtitles,
-              }))
-            } catch (error) {
-              setState((prev) => ({
-                ...prev,
-                loading: false,
-                videoInfo: prev.videoInfo, // 保留已获取的视频信息
-              }))
-              toast.error('视频加载失败')
-            }
-          }
-        }
-      } catch (error) {
-        console.error('获取视频失败:', error)
+        // 更新视频URL
         setState((prev) => ({
           ...prev,
           loading: false,
-          videoInfo: null,
+          videoInfo: prev.videoInfo
+            ? {
+                ...prev.videoInfo,
+                embedUrl: videoUrl,
+              }
+            : null,
         }))
-        toast.error('视频加载失败')
+
+        // 获取字幕
+        const subtitles = await getBiliSubtitles(url)
+        setState((prev) => ({
+          ...prev,
+          subtitles,
+        }))
+      } catch (error: any) {
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          videoInfo: prev.videoInfo, // 保留已获取的视频信息
+        }))
+        toast.error(error?.message || '视频加载失败')
       }
     }
 

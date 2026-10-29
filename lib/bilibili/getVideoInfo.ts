@@ -9,7 +9,10 @@ export async function getVideoInfo(bvid: string): Promise<Partial<VideoInfo>> {
     }
 
     const json = await response.json()
-    const data = json.data
+    const data = json?.data
+    if (!data?.title) {
+      throw new Error(json?.message || '视频不存在或已被删除')
+    }
 
     return {
       title: data.title,

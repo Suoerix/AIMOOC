@@ -159,7 +159,7 @@ export function SignIn({ showSignIn: externalShowSignIn }: { showSignIn: (show: 
         <div className="w-full overflow-hidden bg-white shadow-xl md:max-w-md md:rounded-2xl md:border md:border-gray-200">
           <div className="flex flex-col items-center justify-center space-y-3 border-b border-gray-200 bg-white px-4 py-6 pt-8 text-center md:px-16">
             <h3 className="font-display text-2xl font-bold">登录</h3>
-            <p className="text-sm text-gray-500">请使用演示账号登录</p>
+            <p className="text-sm text-gray-500">使用邮箱或 GitHub 登录</p>
           </div>
 
           <Tabs defaultValue="email" className="w-full bg-white">

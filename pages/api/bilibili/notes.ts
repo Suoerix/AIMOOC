@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { getOpenAIClient, OPENAI_MODEL } from '~/lib/openai'
+import { getOpenAIClient, withRetry, OPENAI_MODEL } from '~/lib/openai'
 import { NOTES_SYSTEM_PROMPT, subtitlesToText } from '~/lib/ai/prompts'
 import { fetchSubtitles } from '~/lib/bilibili/server'
 
@@ -27,19 +27,27 @@ export default async function handler(
 
     const transcript = subtitlesToText(subtitles, false)
     const client = getOpenAIClient()
-    const completion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
-      messages: [
-        { role: 'system', content: NOTES_SYSTEM_PROMPT },
-        { role: 'user', content: `视频字幕如下：\n\n${transcript}` },
-      ],
-      temperature: 0.3,
-    })
+    const completion = await withRetry(() =>
+      client.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: [
+          { role: 'system', content: NOTES_SYSTEM_PROMPT },
+          { role: 'user', content: `视频字幕如下：\n\n${transcript}` },
+        ],
+        temperature: 0.3,
+      })
+    )
 
     const notes = completion.choices[0]?.message?.content || ''
     res.status(200).json({ notes })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error generating notes:', error)
-    res.status(500).json({ error: 'Failed to generate notes' })
+    const status = error?.status || 500
+    res.status(status).json({
+      error:
+        status === 429
+          ? 'AI 服务请求频率/配额超限（429），请稍后重试或检查 API key 配额'
+          : `AI 服务错误（${status}）: ${error?.message || 'Failed to generate notes'}`,
+    })
   }
 }

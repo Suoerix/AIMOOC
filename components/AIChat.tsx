@@ -49,7 +49,12 @@ export default function AIChat({ show, onClose }: AIChatProps) {
       })
 
       if (!response.ok || !response.body) {
-        throw new Error('API 请求失败')
+        let detail = `请求失败（${response.status}）`
+        try {
+          const errJson = await response.json()
+          if (errJson?.error) detail = errJson.error
+        } catch {}
+        throw new Error(detail)
       }
 
       let assistantMessage = ''
@@ -74,13 +79,13 @@ export default function AIChat({ show, onClose }: AIChatProps) {
           return newMessages
         })
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('AI响应错误:', error)
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: '抱歉，处理您的请求时出现错误。请稍后重试。',
+          content: `抱歉，处理您的请求时出现错误：${error?.message || '未知错误'}`,
         },
       ])
     }
