@@ -58,6 +58,8 @@ const formatNotes = (notes: string, onTimeClick?: (time: number) => void) => {
     .join('')
 }
 
+const NOTES_CACHE_PREFIX = 'bilibili_notes_'
+
 const Notes: FC<NotesProps> = ({ url, onTimeClick }) => {
   const [notes, setNotes] = useState<string>('')
   const [loading, setLoading] = useState(false)
@@ -67,14 +69,27 @@ const Notes: FC<NotesProps> = ({ url, onTimeClick }) => {
     async function fetchNotes() {
       if (!url) return
 
-      setLoading(true)
+      let videoUrl = ''
       try {
         const savedData = localStorage.getItem(`learning_${url}`)
         if (!savedData) return
+        videoUrl = JSON.parse(savedData).url
+      } catch {
+        return
+      }
 
-        const { url: videoUrl } = JSON.parse(savedData)
+      const cacheKey = `${NOTES_CACHE_PREFIX}${videoUrl}`
+      const cached = localStorage.getItem(cacheKey)
+      if (cached) {
+        setNotes(cached)
+        return
+      }
+
+      setLoading(true)
+      try {
         const notesContent = await getBiliNotes(videoUrl)
         setNotes(notesContent)
+        localStorage.setItem(cacheKey, notesContent)
       } catch (err) {
         console.error('获取笔记失败:', err)
         setError('获取笔记失败，请重试')

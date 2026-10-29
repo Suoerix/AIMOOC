@@ -2,6 +2,8 @@ import OpenAI from 'openai'
 
 export const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
+export const OPENAI_MAX_TOKENS = Number(process.env.OPENAI_MAX_TOKENS ?? 4096)
+
 export function getOpenAIClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {

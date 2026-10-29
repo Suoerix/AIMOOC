@@ -5,7 +5,27 @@ const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
 export function extractBvid(url: string): string | undefined {
-  return url.match(/\/video\/(BV[a-zA-Z0-9]+)/)?.[1]
+  return (
+    url.match(/\/video\/(BV[a-zA-Z0-9]+)/)?.[1] ||
+    url.match(/b23\.tv\/(BV[a-zA-Z0-9]+)/)?.[1]
+  )
+}
+
+export async function normalizeBiliUrl(url: string): Promise<string> {
+  if (url.includes('b23.tv')) {
+    try {
+      const response = await fetch(url, {
+        redirect: 'follow',
+        headers: { 'User-Agent': USER_AGENT, Referer: 'https://www.bilibili.com/' },
+      })
+      if (response.url.includes('bilibili.com/video/')) {
+        return response.url
+      }
+    } catch (error) {
+      console.error('Error normalizing b23.tv url:', error)
+    }
+  }
+  return url
 }
 
 export function extractPageParam(url: string): number {
@@ -58,7 +78,8 @@ interface ViewData {
 }
 
 async function getViewData(url: string, cookie?: string): Promise<ViewData> {
-  const bvid = extractBvid(url)
+  const normalized = await normalizeBiliUrl(url)
+  const bvid = extractBvid(normalized)
   if (!bvid) {
     throw new Error('Invalid bilibili video url')
   }

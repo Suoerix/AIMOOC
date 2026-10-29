@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { getOpenAIClient, withRetry, OPENAI_MODEL } from '~/lib/openai'
+import { getOpenAIClient, withRetry, OPENAI_MODEL, OPENAI_MAX_TOKENS } from '~/lib/openai'
 import { buildSummarizePrompt, subtitlesToText } from '~/lib/ai/prompts'
 import { getCache, setCache } from '~/lib/cache'
 import { fetchSubtitles } from '~/lib/bilibili/server'
@@ -55,6 +55,7 @@ export default async function handler(
           { role: 'user', content: `视频字幕如下：\n\n${transcript}` },
         ],
         temperature: 0.4,
+        max_tokens: OPENAI_MAX_TOKENS,
         stream: true,
       })
     )

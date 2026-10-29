@@ -87,7 +87,21 @@ export function VideoInput({ onSubmit, getValues, register, showSignIn }: VideoI
     return true
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const resolveB23Url = async (url: string): Promise<string> => {
+    if (!url.includes('b23.tv')) return url
+    try {
+      const response = await fetch(`/api/b23tv?url=${encodeURIComponent(url.trim())}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.url) return data.url as string
+      }
+    } catch (error) {
+      console.error('转换短链接失败:', error)
+    }
+    return url
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!user) {
@@ -100,8 +114,23 @@ export function VideoInput({ onSubmit, getValues, register, showSignIn }: VideoI
       return
     }
 
-    const urlToUse = uploadState.uploadedUrl || inputValue
+    let urlToUse = uploadState.uploadedUrl || inputValue
     if (!validateUrl(urlToUse)) return
+
+    // b23.tv 短链先转换为完整链接再存储，避免 learn 页无法解析
+    if (urlToUse.includes('b23.tv')) {
+      toast({ title: '正在转换短链接...' })
+      urlToUse = await resolveB23Url(urlToUse)
+      if (urlToUse.includes('b23.tv')) {
+        toast({
+          title: '短链接转换失败',
+          description: '请尝试直接使用完整链接',
+          variant: 'destructive',
+        })
+        return
+      }
+      setInputValue(urlToUse)
+    }
 
     // 使用视频URL生成固定的id
     const id = btoa(urlToUse)

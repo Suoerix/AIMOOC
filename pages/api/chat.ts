@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { getOpenAIClient, withRetry, OPENAI_MODEL } from '~/lib/openai'
+import { getOpenAIClient, withRetry, OPENAI_MODEL, OPENAI_MAX_TOKENS } from '~/lib/openai'
 import { CHAT_SYSTEM_PROMPT } from '~/lib/ai/prompts'
 
 export const maxDuration = 60
@@ -27,8 +27,9 @@ export default async function handler(
     const stream = await withRetry(() =>
       client.chat.completions.create({
         model: OPENAI_MODEL,
-        messages: [{ role: 'system', content: CHAT_SYSTEM_PROMPT }, ...messages],
-        stream: true,
+      messages: [{ role: 'system', content: CHAT_SYSTEM_PROMPT }, ...messages],
+      max_tokens: OPENAI_MAX_TOKENS,
+      stream: true,
       })
     )
 
