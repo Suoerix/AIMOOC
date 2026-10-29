@@ -4,6 +4,31 @@ const BILIBILI_API = 'https://api.bilibili.com'
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
+let proxyDispatcher: unknown | undefined
+
+function getProxyDispatcher(): unknown | undefined {
+  const proxyUrl = process.env.BILIBILI_PROXY
+  if (!proxyUrl) return undefined
+  if (proxyDispatcher) return proxyDispatcher
+  try {
+    const { ProxyAgent } = require('undici') as typeof import('undici')
+    proxyDispatcher = new ProxyAgent(proxyUrl)
+    return proxyDispatcher
+  } catch (error) {
+    console.error('Failed to create BILIBILI_PROXY agent:', error)
+    return undefined
+  }
+}
+
+export async function biliFetchRaw(url: string, headers: Record<string, string>): Promise<Response> {
+  const dispatcher = getProxyDispatcher()
+  const init: RequestInit & { dispatcher?: unknown } = { headers, redirect: 'follow' }
+  if (dispatcher) {
+    init.dispatcher = dispatcher
+  }
+  return fetch(url, init as RequestInit)
+}
+
 export function extractBvid(url: string): string | undefined {
   return (
     url.match(/\/video\/(BV[a-zA-Z0-9]+)/)?.[1] ||
@@ -14,9 +39,9 @@ export function extractBvid(url: string): string | undefined {
 export async function normalizeBiliUrl(url: string): Promise<string> {
   if (url.includes('b23.tv')) {
     try {
-      const response = await fetch(url, {
-        redirect: 'follow',
-        headers: { 'User-Agent': USER_AGENT, Referer: 'https://www.bilibili.com/' },
+      const response = await biliFetchRaw(url, {
+        'User-Agent': USER_AGENT,
+        Referer: 'https://www.bilibili.com/',
       })
       if (response.url.includes('bilibili.com/video/')) {
         return response.url
@@ -55,9 +80,7 @@ interface BiliApiResponse<T> {
 }
 
 async function biliFetch<T>(path: string, cookie?: string): Promise<T> {
-  const response = await fetch(`${BILIBILI_API}${path}`, {
-    headers: biliHeaders(cookie),
-  })
+  const response = await biliFetchRaw(`${BILIBILI_API}${path}`, biliHeaders(cookie))
   if (!response.ok) {
     throw new Error(`Bilibili API request failed: ${response.status}`)
   }
@@ -142,7 +165,7 @@ export async function fetchSubtitles(
       const subtitleUrl = entry.subtitle_url.startsWith('//')
         ? `https:${entry.subtitle_url}`
         : entry.subtitle_url
-      const res = await fetch(subtitleUrl, { headers: biliHeaders(cookie) })
+      const res = await biliFetchRaw(subtitleUrl, biliHeaders(cookie))
       if (!res.ok) return null
       const body = (await res.json()) as { body: SubtitleBodyItem[] }
       return {

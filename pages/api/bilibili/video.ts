@@ -1,66 +1,73 @@
-import type { NextRequest } from 'next/server'
-import { getPlayUrl } from '~/lib/bilibili/server'
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { Readable } from 'stream'
+import { biliFetchRaw, getPlayUrl } from '~/lib/bilibili/server'
 
-export const config = { runtime: 'edge' }
+export const maxDuration = 60
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
-function json(error: string, status: number) {
-  return new Response(JSON.stringify({ error }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
-}
-
-export default async function handler(req: NextRequest) {
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
   let url: string | undefined
   let cookie: string | undefined
 
   if (req.method === 'GET') {
-    url = req.nextUrl.searchParams.get('url') || undefined
+    url = req.query.url as string
   } else if (req.method === 'POST') {
-    const body = (await req.json()) as { url?: string; cookie?: string }
-    url = body.url
-    cookie = body.cookie
+    url = req.body?.url
+    cookie = req.body?.cookie
+    // resolve 模式：只返回 CDN 直链，由浏览器直接播放（绕过服务端视频代理）
+    if (url && req.body?.resolve === '1') {
+      try {
+        const { playUrl } = await getPlayUrl(url, cookie)
+        return res.status(200).json({ playUrl })
+      } catch (error) {
+        console.error('Error resolving playurl:', error)
+        return res.status(500).json({ error: 'Failed to resolve play url' })
+      }
+    }
   } else {
-    return json('Method not allowed', 405)
+    return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  if (!url) {
-    return json('Missing url parameter', 400)
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: 'Missing url parameter' })
   }
 
   try {
     const { playUrl } = await getPlayUrl(url, cookie)
-    const range = req.headers.get('range')
+    const range = req.headers.range
 
-    const upstream = await fetch(playUrl, {
-      headers: {
-        'User-Agent': USER_AGENT,
-        Referer: 'https://www.bilibili.com/',
-        ...(cookie ? { Cookie: cookie } : {}),
-        ...(range ? { Range: range } : {}),
-      },
+    const upstream = await biliFetchRaw(playUrl, {
+      'User-Agent': USER_AGENT,
+      Referer: 'https://www.bilibili.com/',
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...(range ? { Range: range } : {}),
     })
 
     if (!upstream.ok || !upstream.body) {
-      return json('Failed to fetch video', 502)
+      return res.status(502).json({ error: 'Failed to fetch video' })
     }
 
-    const headers = new Headers({
-      'content-type': upstream.headers.get('content-type') || 'video/mp4',
-      'accept-ranges': 'bytes',
-      'cache-control': 'no-store',
-    })
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'video/mp4')
+    res.setHeader('Accept-Ranges', 'bytes')
+    res.setHeader('Cache-Control', 'no-store')
     for (const key of ['content-length', 'content-range']) {
       const value = upstream.headers.get(key)
-      if (value) headers.set(key, value)
+      if (value) res.setHeader(key === 'content-length' ? 'Content-Length' : 'Content-Range', value)
     }
+    res.status(upstream.status)
 
-    return new Response(upstream.body, { status: upstream.status, headers })
+    Readable.fromWeb(upstream.body as any).pipe(res)
   } catch (error) {
     console.error('Error proxying video:', error)
-    return json('Failed to fetch video', 500)
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to fetch video' })
+    } else {
+      res.end()
+    }
   }
 }

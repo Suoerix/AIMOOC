@@ -184,11 +184,16 @@ export function VideoPlayer({ videoRef, videoInfo, loading, onTimeUpdate }: Vide
             )}
 
             {videoInfo?.embedUrl ? (
-              videoInfo.embedUrl.startsWith('blob:') || videoInfo.embedUrl.startsWith('/api/') ? (
+              videoInfo.embedUrl.startsWith('blob:') ||
+              videoInfo.embedUrl.startsWith('/api/') ||
+              videoInfo.embedUrl.includes('bilivideo.com') ? (
                 <>
                   <video
                     ref={videoRef}
                     src={videoInfo.embedUrl}
+                    {...(videoInfo.embedUrl.includes('bilivideo.com')
+                      ? { referrerPolicy: 'no-referrer' as any }
+                      : {})}
                     className="absolute inset-0 h-full w-full"
                     playsInline
                   />
