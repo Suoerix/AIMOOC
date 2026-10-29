@@ -1,4 +1,5 @@
 import { SubtitleData } from '~/lib/types'
+import { getBiliCookie } from '~/lib/bilibili/auth'
 
 export async function getBiliSubtitles(url: string): Promise<SubtitleData[]> {
   try {
@@ -7,7 +8,10 @@ export async function getBiliSubtitles(url: string): Promise<SubtitleData[]> {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url })
+      body: JSON.stringify({
+        url,
+        cookie: getBiliCookie() || ''
+      })
     })
 
     if (!response.ok) {

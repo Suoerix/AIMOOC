@@ -1,3 +1,5 @@
+import { getBiliCookie } from '~/lib/bilibili/auth'
+
 export async function getBiliVideo(url: string): Promise<string> {
   try {
     const response = await fetch('/api/bilibili/video', {
@@ -5,7 +7,10 @@ export async function getBiliVideo(url: string): Promise<string> {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({
+        url,
+        cookie: getBiliCookie() || '',
+      }),
     })
 
     if (!response.ok) {

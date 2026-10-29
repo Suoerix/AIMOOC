@@ -13,7 +13,7 @@ export function extractPageParam(url: string): number {
   return p ? Number(p) : 1
 }
 
-function biliHeaders(cookie?: string): Record<string, string> {
+export function biliHeaders(cookie?: string): Record<string, string> {
   const headers: Record<string, string> = {
     'User-Agent': USER_AGENT,
     Referer: 'https://www.bilibili.com/',
@@ -135,6 +135,25 @@ export async function fetchSubtitles(
 
 interface PlayUrlData {
   durl: { url: string; size: number }[]
+}
+
+export interface BiliUser {
+  mid: number
+  uname: string
+  face: string
+}
+
+export async function verifyBiliCookie(cookie: string): Promise<BiliUser | null> {
+  try {
+    const data = await biliFetch<{ isLogin: boolean; mid: number; uname: string; face: string }>(
+      '/x/web-interface/nav',
+      cookie
+    )
+    if (!data.isLogin) return null
+    return { mid: data.mid, uname: data.uname, face: data.face }
+  } catch {
+    return null
+  }
 }
 
 export async function getPlayUrl(

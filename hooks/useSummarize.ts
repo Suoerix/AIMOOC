@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useToast } from '~/hooks/use-toast'
 import { UserConfig, VideoConfig } from '~/lib/types'
+import { getBiliCookie } from '~/lib/bilibili/auth'
 import { RATE_LIMIT_COUNT } from '~/utils/constants'
 
 export function useSummarize(showSingIn: (show: boolean) => void, enableStream: boolean = true) {
@@ -26,6 +27,7 @@ export function useSummarize(showSingIn: (show: boolean) => void, enableStream: 
         body: JSON.stringify({
           videoConfig,
           userConfig,
+          cookie: getBiliCookie() || '',
         }),
       })
 

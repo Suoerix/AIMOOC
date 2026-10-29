@@ -16,7 +16,9 @@ export default async function handler(
     return res.status(405).json({ errorMessage: 'Method not allowed' })
   }
 
-  const { videoConfig, userConfig } = (req.body || {}) as SummarizeParams
+  const { videoConfig, userConfig, cookie } = (req.body || {}) as SummarizeParams & {
+    cookie?: string
+  }
   if (!videoConfig?.videoId) {
     return res.status(400).json({ errorMessage: 'Missing videoConfig' })
   }
@@ -33,7 +35,7 @@ export default async function handler(
     const url = `https://www.bilibili.com/video/${videoConfig.videoId}${
       videoConfig.pageNumber ? `?p=${videoConfig.pageNumber}` : ''
     }`
-    const subtitles = await fetchSubtitles(url)
+    const subtitles = await fetchSubtitles(url, cookie)
     if (!subtitles.length) {
       return res.status(501).json({ errorMessage: 'No subtitles found' })
     }

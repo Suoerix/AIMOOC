@@ -5,6 +5,7 @@
 项目完全实现本地化。
 前端 + 后端：本仓库，基于 React 和 NextJS 的全栈单体架构，后端逻辑由 Next.js API Routes（`pages/api/`）实现，可直接部署到 [Vercel](https://vercel.com)。
 - `pages/api/bilibili/*`：B 站视频信息 / 字幕 / 视频流代理 / AI 笔记
+- `pages/api/bilibili/login/*`：B 站扫码登录 / 凭证验证（首次使用会自动弹出登录框，也可手动填入 SESSDATA；凭证仅保存在浏览器本地，按请求传给服务端使用，服务端不落盘）
 - `pages/api/sumup`：AI 视频总结（流式输出，带 Upstash 缓存与限流）
 - `pages/api/chat`：AI 助教聊天（流式输出，API Key 仅在服务端使用）
 数据库：[supabase](https://supabase.com)负责用户验证和课程相关信息；[upstash](https://upstash.com)负责聊天记录等。

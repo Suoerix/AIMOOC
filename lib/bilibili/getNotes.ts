@@ -1,3 +1,5 @@
+import { getBiliCookie } from '~/lib/bilibili/auth'
+
 interface NotesResponse {
   notes: string
 }
@@ -9,7 +11,10 @@ export async function getBiliNotes(url: string): Promise<string> {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url })
+      body: JSON.stringify({
+        url,
+        cookie: getBiliCookie() || ''
+      })
     })
 
     if (!response.ok) {

@@ -1,13 +1,15 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { Button } from '../ui/button'
-import { MessageCircle, Compass, History, Bookmark } from 'lucide-react'
+import { MessageCircle, Compass, History, Bookmark, Tv } from 'lucide-react'
 import AIChat from '~/components/AIChat'
+import BilibiliLogin from '~/components/BilibiliLogin'
 import { useRouter } from 'next/router'
 import { cn } from '~/lib/utils'
 import { useUser, useSupabaseClient } from '@supabase/auth-helpers-react'
 import SignIn from './SignIn'
 import { ModeToggle } from './SwitchLight'
+import { getBiliAuth } from '~/lib/bilibili/auth'
 
 interface HeaderProps {
   showSignIn: (show: boolean) => void
@@ -15,10 +17,17 @@ interface HeaderProps {
 
 export default function Header({ showSignIn }: HeaderProps) {
   const [showAIChat, setShowAIChat] = useState(false)
+  const [showBiliLogin, setShowBiliLogin] = useState(false)
   const router = useRouter()
   const isLearnPage = router.pathname.startsWith('/learn')
   const [isTransitioning, setIsTransitioning] = useState(false)
   const user = useUser()
+
+  useEffect(() => {
+    if (!getBiliAuth()) {
+      setShowBiliLogin(true)
+    }
+  }, [])
 
   // 监听路由变化，触发过渡动画
   useEffect(() => {
@@ -125,6 +134,16 @@ export default function Header({ showSignIn }: HeaderProps) {
               </Button>
             </Link>
 
+            {/* B站登录 */}
+            <Button
+              variant="ghost"
+              className="flex h-auto min-h-[4rem] flex-col items-center gap-0.5 px-3 py-1 hover:bg-white/50 dark:hover:bg-gray-800/50"
+              onClick={() => setShowBiliLogin(true)}
+            >
+              <Tv className="h-5 w-5" />
+              <span className="text-sm">B站</span>
+            </Button>
+
             {/* 登录按钮 */}
             <SignIn showSignIn={showSignIn} />
           </nav>
@@ -133,6 +152,9 @@ export default function Header({ showSignIn }: HeaderProps) {
 
       {/* AI 对话组件 */}
       <AIChat show={showAIChat} onClose={() => setShowAIChat(false)} />
+
+      {/* B站登录组件 */}
+      <BilibiliLogin show={showBiliLogin} onClose={() => setShowBiliLogin(false)} />
     </>
   )
 }
