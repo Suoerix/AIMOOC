@@ -1,14 +1,8 @@
-import OpenAI from 'openai'
 import { useState, useRef, useEffect } from 'react'
 import { Button } from '~/components/ui/button'
 import { X, Minimize2, Maximize2, MessageCircle } from 'lucide-react'
 import Draggable from 'react-draggable'
 import { cn } from '~/lib/utils'
-
-const client = new OpenAI({
-  apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true,
-})
 
 interface Message {
   role: 'user' | 'assistant'
@@ -44,15 +38,30 @@ export default function AIChat({ show, onClose }: AIChatProps) {
     setInput('')
 
     try {
-      const stream = await client.chat.completions.create({
-        model: 'gpt-4',
-        messages: [...messages, userMessage],
-        stream: true,
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [...messages, userMessage],
+        }),
       })
 
+      if (!response.ok || !response.body) {
+        throw new Error('API 请求失败')
+      }
+
       let assistantMessage = ''
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || ''
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let done = false
+
+      while (!done) {
+        const { value, done: doneReading } = await reader.read()
+        done = doneReading
+        const content = decoder.decode(value)
+        if (!content) continue
         assistantMessage += content
 
         setMessages((prev) => {

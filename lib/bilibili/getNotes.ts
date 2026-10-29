@@ -4,16 +4,12 @@ interface NotesResponse {
 
 export async function getBiliNotes(url: string): Promise<string> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_ALGO_BASE_URL || 'http://localhost:3001'
-    const response = await fetch(`${baseUrl}/notes`, {
+    const response = await fetch('/api/bilibili/notes', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
-        url,
-        cookie: process.env.BILIBILI_SESSION_TOKEN || ''
-      })
+      body: JSON.stringify({ url })
     })
 
     if (!response.ok) {
@@ -26,4 +22,4 @@ export async function getBiliNotes(url: string): Promise<string> {
     console.error('获取笔记失败:', error)
     throw error
   }
-} 
+}

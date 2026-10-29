@@ -1,15 +1,11 @@
 export async function getBiliVideo(url: string): Promise<string> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_ALGO_BASE_URL || 'http://localhost:3001'
-    const response = await fetch(`${baseUrl}/video`, {
+    const response = await fetch('/api/bilibili/video', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        url,
-        cookie: process.env.BILIBILI_SESSION_TOKEN || '',
-      }),
+      body: JSON.stringify({ url }),
     })
 
     if (!response.ok) {

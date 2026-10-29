@@ -1,27 +1,13 @@
-interface SubtitleItem {
-  from: number
-  to: number
-  location: number
-  content: string
-}
-
-interface SubtitleData {
-  lan: string
-  subtitle: SubtitleItem[]
-}
+import { SubtitleData } from '~/lib/types'
 
 export async function getBiliSubtitles(url: string): Promise<SubtitleData[]> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_ALGO_BASE_URL || 'http://localhost:3001'
-    const response = await fetch(`${baseUrl}/subtitle`, {
+    const response = await fetch('/api/bilibili/subtitle', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
-        url,
-        cookie: process.env.BILIBILI_SESSION_TOKEN || ''
-      })
+      body: JSON.stringify({ url })
     })
 
     if (!response.ok) {
@@ -33,4 +19,4 @@ export async function getBiliSubtitles(url: string): Promise<SubtitleData[]> {
     console.error('获取字幕失败:', error)
     throw error
   }
-} 
+}

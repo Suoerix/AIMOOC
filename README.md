@@ -3,8 +3,10 @@
 初衷是觉得现在的在线学习平台太不智能了，学习起来很费劲，现在有这么强大的 AI 技术，为什么不利用起来呢？所以自己写了一个。但是本人能力有限，也没有经过专业的前后端工程实践，都是自己瞎琢磨的，所以肯定有很多不足之处，希望各位大佬多指教。
 
 项目完全实现本地化。
-前端：本仓库，基于 React 和 NextJS。
-后端：基于 python-FASTAPI[AIMOOC_API](https://github.com/JinHanLei/AIMOOC_API)，更适合开发深度学习套件。
+前端 + 后端：本仓库，基于 React 和 NextJS 的全栈单体架构，后端逻辑由 Next.js API Routes（`pages/api/`）实现，可直接部署到 [Vercel](https://vercel.com)。
+- `pages/api/bilibili/*`：B 站视频信息 / 字幕 / 视频流代理 / AI 笔记
+- `pages/api/sumup`：AI 视频总结（流式输出，带 Upstash 缓存与限流）
+- `pages/api/chat`：AI 助教聊天（流式输出，API Key 仅在服务端使用）
 数据库：[supabase](https://supabase.com)负责用户验证和课程相关信息；[upstash](https://upstash.com)负责聊天记录等。
 
 界面如下：
@@ -18,8 +20,17 @@
 git clone https://github.com/JinHanLei/AIMOOC.git
 cd AIMOOC
 npm install
+cp .example.env .env.local  # 填入你的配置
 npm run dev
 ```
+
+# 部署到 Vercel
+
+1. 将本仓库导入 Vercel；
+2. 在项目设置中按 `.example.env` 配置环境变量（`OPENAI_API_KEY` 必填，其余可选）；
+3. 部署即可，无需独立后端。
+
+> 注意：B 站视频流代理（`/api/bilibili/video`）使用 Edge Runtime 流式转发，Vercel Hobby 计划对函数执行时长有限制，超长视频可能加载较慢或超时。
 
 # 亮点：
 
