@@ -3,13 +3,13 @@ import { BASE_DOMAIN } from '~/utils/constants'
 
 class MyDocument extends Document {
   render() {
-    let description = 'AIMOOC——AI驱动的慕课系统，'
+    let description = '弘识智教——AI 驱动的互动式在线学习平台，'
     let ogimage = `${BASE_DOMAIN}/og-image.png`
-    let sitename = ''
-    let title = '良师益友'
+    let sitename = '弘识智教'
+    let title = '弘识智教'
 
     return (
-      <Html lang="en">
+      <Html lang="zh-CN">
         <Head>
           <link
             rel="icon"

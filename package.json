@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "aimooc",
+  "name": "hongshizhijiao",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

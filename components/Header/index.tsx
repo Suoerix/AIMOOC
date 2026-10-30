@@ -78,7 +78,7 @@ export default function Header({ showSignIn }: HeaderProps) {
           >
             <Link href="/">
               <span className="bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent hover:from-blue-500 hover:to-blue-300">
-                AIMOOC
+                弘识智教
               </span>
             </Link>
           </div>
