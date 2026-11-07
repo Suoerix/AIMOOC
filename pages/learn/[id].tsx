@@ -2,7 +2,7 @@ import { NextPage } from 'next'
 import { useRouter } from 'next/router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, FlaskConical, BookOpen, PlayCircle, GraduationCap, ChevronUp, MessageCircle, Tv } from 'lucide-react'
+import { ArrowLeft, FlaskConical, BookOpen, PlayCircle, GraduationCap, ChevronUp, MessageCircle, Tv, StickyNote, X } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import Link from 'next/link'
 import BilibiliLogin from '~/components/BilibiliLogin'
@@ -20,6 +20,9 @@ import { CoursewareView } from '~/components/classroom/CoursewareView'
 import { VideoDock } from '~/components/classroom/VideoDock'
 import { VisualizationStage } from '~/components/classroom/VisualizationStage'
 import { TeachingAssistant, newMsgId, TAMessage } from '~/components/classroom/TeachingAssistant'
+import { AuthModal } from '~/components/auth/AuthModal'
+import { useAuth } from '~/lib/supabase/auth-context'
+import { saveCourse, saveNote } from '~/lib/history'
 import { cn } from '~/lib/utils'
 
 type StageTab = 'viz' | 'slides' | 'video'
@@ -51,6 +54,28 @@ const ClassroomPage: NextPage = () => {
   const [sheetOpen, setSheetOpen] = useState(false) // 移动端助教抽屉
   const [messages, setMessages] = useState<TAMessage[]>([])
   const [showBiliLogin, setShowBiliLogin] = useState(false)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [authOpen, setAuthOpen] = useState(false)
+  const [quota, setQuota] = useState<{ remaining: number; limit: number; tier: string } | null>(
+    null
+  )
+  const { user } = useAuth()
+
+  // 今日生成额度（登录用户额度更高）
+  useEffect(() => {
+    let alive = true
+    fetch('/api/quota')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive || !d) return
+        setQuota({ remaining: d.generate.remaining, limit: d.generate.limit, tier: d.tier })
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [user])
 
   const courseware = useCourseware()
   const viz = useVisualize()
@@ -76,6 +101,86 @@ const ClassroomPage: NextPage = () => {
     },
     [pushMessage]
   )
+
+  // ===== 学习时长埋点 + 历史入库 =====
+  const elapsedRef = useRef(0)
+
+  const reportStudy = useCallback(
+    (kind: string) => {
+      const sec = Math.round(elapsedRef.current)
+      elapsedRef.current = 0
+      if (sec < 5) return
+      const videoId = bvidRef.current || 'unknown'
+      const title = videoInfo?.title || '未命名课程'
+      // 上报服务端（用于后台看板）
+      fetch('/api/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId,
+          title,
+          subject: 'B 站视频',
+          durationSec: sec,
+          kind,
+        }),
+        keepalive: true,
+      }).catch(() => {})
+      // 写入本地 / 云端学习历史
+      saveCourse({
+        videoId,
+        title,
+        subject: 'B 站视频',
+        url: videoUrlRef.current,
+        durationSec: sec,
+      }).catch(() => {})
+    },
+    [videoInfo?.title]
+  )
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      elapsedRef.current += 1
+      if (elapsedRef.current % 30 === 0) reportStudy('session')
+    }, 1000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') reportStudy('session')
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+      reportStudy('leave')
+    }
+  }, [reportStudy])
+
+  // 进度变化 → 更新历史记录
+  useEffect(() => {
+    if (!bvidRef.current || !videoInfo?.title) return
+    const total = courseware.slides.length
+    // 没有课件时不做进度推断（避免一律显示 80%）
+    const progress = total > 0 ? Math.min(99, Math.round(((slideIndex + 1) / total) * 80)) : 0
+    saveCourse({
+      videoId: bvidRef.current,
+      title: videoInfo.title,
+      subject: 'B 站视频',
+      url: videoUrlRef.current,
+      progress,
+    }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slideIndex, courseware.slides.length, videoInfo?.title])
+
+  // ===== 课堂笔记 =====
+  const handleSaveNote = useCallback(async () => {
+    if (!noteDraft.trim()) return
+    await saveNote({
+      videoId: bvidRef.current || 'general',
+      title: videoInfo?.title ? `《${videoInfo.title}》的笔记` : '课堂笔记',
+      content: noteDraft.trim(),
+    })
+    setNoteDraft('')
+    setNoteOpen(false)
+    toast.success('笔记已保存到「我的笔记」')
+  }, [noteDraft, videoInfo?.title])
 
   // ===== 开场问候（保证助教面板不为空） =====
   const greetedRef = useRef(false)
@@ -214,9 +319,24 @@ const ClassroomPage: NextPage = () => {
   }, [quiz.questions, quiz.loading])
 
   // ===== 答题反馈 + 下一题 =====
+  const quizRightRef = useRef(0)
   const handleQuizAnswer = useCallback(
     (correct: boolean, _msgId: string) => {
       const idx = currentQuizIndex
+      const total = quiz.questions.length
+      const right = quizRightRef.current + (correct ? 1 : 0)
+      quizRightRef.current = right
+      if (bvidRef.current) {
+        saveCourse({
+          videoId: bvidRef.current,
+          title: videoInfo?.title || '未命名课程',
+          subject: 'B 站视频',
+          url: videoUrlRef.current,
+          quizRight: right,
+          quizTotal: total,
+          progress: Math.max(60, Math.round((right / Math.max(1, total)) * 100)),
+        }).catch(() => {})
+      }
       pushTa(
         correct
           ? PRAISE[idx % PRAISE.length]
@@ -337,7 +457,7 @@ const ClassroomPage: NextPage = () => {
   ]
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#040711] text-slate-100">
+    <div className="relative flex h-screen flex-col overflow-hidden bg-[#040711] text-slate-100">
       {/* ===== 顶栏 ===== */}
       <header className="glass-strong z-30 flex items-center gap-3 px-4 py-2.5 sm:px-5">
         <Link
@@ -365,6 +485,35 @@ const ClassroomPage: NextPage = () => {
           </span>
           弘识智教
         </div>
+        {quota && (
+          <span
+            className={cn(
+              'hidden items-center gap-1 rounded-lg px-2 py-1 text-[11px] md:flex',
+              quota.remaining > 0
+                ? 'bg-white/[0.05] text-slate-400'
+                : 'bg-rose-500/10 text-rose-300'
+            )}
+            title="AI 生成（课件 / 实验 / 题目）每日额度"
+          >
+            今日剩余 {quota.remaining}/{quota.limit} 次生成
+          </span>
+        )}
+        {!user && (
+          <button
+            onClick={() => setAuthOpen(true)}
+            className="hidden h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-cyan-500/25 to-violet-500/25 px-3 text-[12px] font-medium text-cyan-100 transition-colors hover:from-cyan-500/40 hover:to-violet-500/40 md:flex"
+          >
+            登录提升额度
+          </button>
+        )}
+        <button
+          onClick={() => setNoteOpen((v) => !v)}
+          title="记笔记"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100/[0.06] text-slate-400 transition-colors hover:bg-slate-100/[0.12] hover:text-cyan-300"
+          aria-label="记笔记"
+        >
+          <StickyNote className="h-4 w-4" />
+        </button>
         <button
           onClick={() => setShowBiliLogin(true)}
           title="B 站账号（用于获取需要登录的字幕）"
@@ -377,6 +526,42 @@ const ClassroomPage: NextPage = () => {
 
       {/* B 站登录弹窗（获取字幕增强） */}
       <BilibiliLogin show={showBiliLogin} onClose={() => setShowBiliLogin(false)} />
+
+      {/* 账号登录 */}
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+
+      {/* 记笔记面板 */}
+      {noteOpen && (
+        <div className="glass-strong absolute left-3 top-[64px] z-[60] w-[min(92vw,360px)] rounded-2xl p-4 shadow-2xl shadow-black/50">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-[13px] font-medium text-slate-200">记下此刻的想法</p>
+            <button
+              onClick={() => setNoteOpen(false)}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-white/[0.06] hover:text-slate-300"
+              aria-label="关闭"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <textarea
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            rows={5}
+            placeholder="这一段我没听懂 / 这个公式原来可以这样理解…"
+            className="w-full resize-none rounded-xl border border-white/[0.07] bg-white/[0.03] p-3 text-[13px] leading-relaxed text-slate-100 placeholder:text-slate-600 focus:border-cyan-400/40 focus:outline-none"
+          />
+          <div className="mt-3 flex items-center justify-between">
+            <span className="text-[11px] text-slate-600">保存后可在「笔记」页查看</span>
+            <button
+              onClick={handleSaveNote}
+              disabled={!noteDraft.trim()}
+              className="flex h-9 items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-4 text-[12.5px] font-medium text-white transition-transform hover:scale-105 disabled:opacity-40"
+            >
+              保存
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ===== 主体 ===== */}
       <div className="relative flex min-h-0 flex-1">
