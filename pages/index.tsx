@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { motion, AnimatePresence } from 'framer-motion'
 import { GraduationCap, BookOpen, Mic2, Eye } from 'lucide-react'
+import { Nav } from '~/components/Nav'
 import { AuroraBackground } from '~/components/Home/AuroraBackground'
 import { ChatEntry } from '~/components/Home/ChatEntry'
 import { CaseGallery } from '~/components/Home/CaseGallery'
@@ -51,8 +52,9 @@ const HomePage: NextPage = () => {
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[#040711] text-slate-100">
       <AuroraBackground />
+      <Nav active="home" />
 
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 pb-16 pt-10 sm:px-8">
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 pb-16 pt-24 sm:px-8">
         {/* ============ HERO ============ */}
         <section className="flex flex-1 flex-col items-center justify-center py-10 text-center">
           {/* Logo 徽章 */}
@@ -130,7 +132,7 @@ const HomePage: NextPage = () => {
         </section>
 
         {/* ============ 案例广场 ============ */}
-        <section className="py-14">
+        <section id="cases" className="scroll-mt-24 py-14">
           <motion.div
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}

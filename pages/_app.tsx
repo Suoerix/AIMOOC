@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { Toaster } from '~/components/ui/toaster'
 import { TooltipProvider } from '~/components/ui/tooltip'
 import { getSupabaseBrowserClient } from '~/lib/supabase/client'
+import { AuthProvider } from '~/lib/supabase/auth-context'
 import '~/styles/globals.css'
 import '~/styles/markdown.css'
 
@@ -28,12 +29,14 @@ function MyApp({
   const shell = (
     <ThemeProvider attribute="class" forcedTheme="dark" enableSystem={false}>
       <TooltipProvider>
-        <div
-          className={`min-h-screen bg-[#040711] font-sans text-slate-100 antialiased ${fontSans.variable}`}
-        >
-          <Component {...pageProps} />
-        </div>
-        <Toaster />
+        <AuthProvider>
+          <div
+            className={`min-h-screen bg-[#040711] font-sans text-slate-100 antialiased ${fontSans.variable}`}
+          >
+            <Component {...pageProps} />
+          </div>
+          <Toaster />
+        </AuthProvider>
       </TooltipProvider>
     </ThemeProvider>
   )
