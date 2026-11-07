@@ -1,6 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { getOpenAIClient, withRetry, OPENAI_MODEL, OPENAI_MAX_TOKENS } from '~/lib/openai'
-import { CHAT_SYSTEM_PROMPT } from '~/lib/ai/prompts'
+import {
+  CHAT_SYSTEM_PROMPT,
+  ROUTER_SYSTEM_PROMPT,
+  buildTeachingAssistantPrompt,
+} from '~/lib/ai/prompts'
 
 export const maxDuration = 60
 
@@ -9,6 +13,10 @@ interface ChatMessage {
   content: string
 }
 
+/**
+ * POST { messages, mode?, videoTitle?, outline? }
+ * mode: 'router'（主页接待） | 'ta'（教室助教，带课程上下文） | 默认通用助教
+ */
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -17,19 +25,29 @@ export default async function handler(
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { messages } = (req.body || {}) as { messages?: ChatMessage[] }
+  const { messages, mode, videoTitle, outline } = (req.body || {}) as {
+    messages?: ChatMessage[]
+    mode?: 'router' | 'ta'
+    videoTitle?: string
+    outline?: string
+  }
   if (!messages?.length) {
     return res.status(400).json({ error: 'Missing messages' })
   }
+
+  let systemPrompt = CHAT_SYSTEM_PROMPT
+  if (mode === 'router') systemPrompt = ROUTER_SYSTEM_PROMPT
+  else if (mode === 'ta') systemPrompt = buildTeachingAssistantPrompt(videoTitle, outline)
 
   try {
     const client = getOpenAIClient()
     const stream = await withRetry(() =>
       client.chat.completions.create({
         model: OPENAI_MODEL,
-      messages: [{ role: 'system', content: CHAT_SYSTEM_PROMPT }, ...messages],
-      max_tokens: OPENAI_MAX_TOKENS,
-      stream: true,
+        messages: [{ role: 'system', content: systemPrompt }, ...messages],
+        max_tokens: mode === 'router' ? 300 : OPENAI_MAX_TOKENS,
+        temperature: mode === 'router' ? 0.6 : 0.7,
+        stream: true,
       })
     )
 

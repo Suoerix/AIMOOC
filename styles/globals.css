@@ -70,3 +70,136 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ============================================================
+   AI 教室 · 科技感视觉系统
+   ============================================================ */
+
+@layer utilities {
+  .glass {
+    background: rgba(148, 163, 184, 0.07);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    backdrop-filter: blur(12px);
+  }
+  .glass-strong {
+    background: rgba(10, 15, 30, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    backdrop-filter: blur(16px);
+  }
+  .text-glow-cyan {
+    text-shadow: 0 0 24px rgba(34, 211, 238, 0.45);
+  }
+  .text-glow-violet {
+    text-shadow: 0 0 24px rgba(167, 139, 250, 0.45);
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* 入场光束扫过 */
+@keyframes beam-sweep {
+  0% {
+    transform: translateX(-100%) skewX(-15deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.7;
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateX(220%) skewX(-15deg);
+    opacity: 0;
+  }
+}
+.animate-beam {
+  animation: beam-sweep 1.2s ease-out 0.4s both;
+}
+
+/* 呼吸光晕 */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+/* 打字光标 */
+@keyframes caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  95% {
+    opacity: 0;
+  }
+}
+.animate-caret {
+  animation: caret-blink 1.1s step-end infinite;
+}
+
+/* 消息进入 */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-msg-in {
+  animation: msg-in 0.35s cubic-bezier(0.21, 1.02, 0.73, 1) both;
+}
+
+/* 声波指示（TTS 播放中） */
+@keyframes voice-wave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.voice-bar {
+  transform-origin: center;
+  animation: voice-wave 0.9s ease-in-out infinite;
+}
+
+/* 网格背景 */
+.bg-grid {
+  background-image: linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+/* 渐变文字 */
+.text-gradient-cyan-violet {
+  background: linear-gradient(120deg, #67e8f9 10%, #a5b4fc 55%, #c084fc 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}

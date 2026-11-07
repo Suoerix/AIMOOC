@@ -12,14 +12,6 @@ const nextConfig = {
     }
     return config
   },
-  async rewrites() {
-    return [
-      {
-        source: '/blocked',
-        destination: '/shop',
-      },
-    ]
-  },
 }
 
 module.exports = nextConfig

@@ -1,194 +1,507 @@
 import { NextPage } from 'next'
 import { useRouter } from 'next/router'
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ArrowLeft, FlaskConical, BookOpen, PlayCircle, GraduationCap, ChevronUp, MessageCircle, Tv } from 'lucide-react'
+import { toast } from 'react-hot-toast'
+import Link from 'next/link'
+import BilibiliLogin from '~/components/BilibiliLogin'
 import { extractUrl, extractPage } from '~/utils/extractUrl'
 import { getVideoInfo } from '~/lib/bilibili/getVideoInfo'
-import { Sidebar } from '~/components/Learn/Sidebar'
-import { toast } from 'react-hot-toast'
-import { AINotes } from '~/components/Learn/AINotesPanel'
-import { VideoPlayer } from '~/components/Learn/VideoPlayer'
-import type { SubtitleData, VideoInfo } from '~/lib/types'
 import { getBiliVideo } from '~/lib/bilibili/getVideo'
-import { VideoService } from '~/lib/types'
 import { getBiliSubtitles } from '~/lib/bilibili/getSubtitles'
+import { getBiliCookie } from '~/lib/bilibili/auth'
+import { VideoService, VideoInfo, SubtitleData } from '~/lib/types'
+import { useCourseware } from '~/hooks/useCourseware'
+import { useVisualize } from '~/hooks/useVisualize'
+import { useQuiz } from '~/hooks/useQuiz'
+import { useTTS } from '~/hooks/useTTS'
+import { CoursewareView } from '~/components/classroom/CoursewareView'
+import { VideoDock } from '~/components/classroom/VideoDock'
+import { VisualizationStage } from '~/components/classroom/VisualizationStage'
+import { TeachingAssistant, newMsgId, TAMessage } from '~/components/classroom/TeachingAssistant'
+import { cn } from '~/lib/utils'
 
-interface PageState {
-  loading: boolean
-  listLoading: boolean
-  videoInfo: VideoInfo | null
-  subtitles: SubtitleData[] | null
-}
+type StageTab = 'viz' | 'slides' | 'video'
 
-const LearnPage: NextPage<{
-  showSignIn: (show: boolean) => void
-}> = ({ showSignIn }) => {
+const PRAISE = ['答得漂亮！', '非常好，就是这么理解！', '完全正确，你已经掌握了！', '很棒，继续保持这个节奏！']
+const ENCOURAGE = [
+  '别灰心，看看解析再回视频确认一下～',
+  '差一点点！再想想关键概念的区别。',
+  '没关系，错了才知道哪里要重点看。',
+]
+
+const ClassroomPage: NextPage = () => {
   const router = useRouter()
   const { id } = router.query
   const videoRef = useRef<HTMLVideoElement>(null)
-  const [state, setState] = useState<PageState>({
-    loading: true,
-    listLoading: true,
-    videoInfo: null,
-    subtitles: null,
-  })
-  const [currentTime, setCurrentTime] = useState(0)
 
+  // ===== 视频数据 =====
+  const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [hasSubtitles, setHasSubtitles] = useState(false)
+  const videoUrlRef = useRef<string>('')
+  const bvidRef = useRef<string>('')
+
+  // ===== 教室状态 =====
+  const [tab, setTab] = useState<StageTab>('slides')
+  const [slideIndex, setSlideIndex] = useState(0)
+  const [jumpRequest, setJumpRequest] = useState<number | null>(null)
+  const [taThinking, setTaThinking] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false) // 移动端助教抽屉
+  const [messages, setMessages] = useState<TAMessage[]>([])
+  const [showBiliLogin, setShowBiliLogin] = useState(false)
+
+  const courseware = useCourseware()
+  const viz = useVisualize()
+  const quiz = useQuiz()
+  const tts = useTTS()
+
+  const pushMessage = useCallback((msg: Omit<TAMessage, 'id'>, speak = false) => {
+    const full: TAMessage = { ...msg, id: newMsgId() }
+    setMessages((prev) => [...prev, full])
+    if (speak && full.content) {
+      tts.speak(full.content)
+    }
+    return full.id
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tts])
+
+  const pushTa = useCallback(
+    (content: string, opts?: { kind?: TAMessage['kind']; time?: number; speak?: boolean }) => {
+      return pushMessage(
+        { role: 'ta', kind: opts?.kind || 'text', content, time: opts?.time },
+        opts?.speak !== false
+      )
+    },
+    [pushMessage]
+  )
+
+  // ===== 开场问候（保证助教面板不为空） =====
+  const greetedRef = useRef(false)
+  useEffect(() => {
+    if (greetedRef.current) return
+    greetedRef.current = true
+    pushTa(
+      '你好，我是小识 —— 你的 AI 助教。左侧是这节课的 AI 课件与可视化实验，右边随时可以把问题丢给我。',
+      { speak: true }
+    )
+  }, [pushTa])
+
+  // ===== 加载视频 =====
   useEffect(() => {
     if (!id) return
 
+    // 支持两种入口：localStorage（主页跳转）/ ?url= 直接分享
+    let url = ''
     const savedData = localStorage.getItem(`learning_${id}`)
-    if (!savedData) {
-      router.push('/')
+    if (savedData) {
+      try {
+        url = JSON.parse(savedData).url || ''
+      } catch {
+        url = ''
+      }
+    }
+    if (!url && typeof router.query.url === 'string') url = router.query.url
+    if (!url) {
+      toast.error('未找到课程信息，即将返回首页')
+      setTimeout(() => router.push('/'), 1200)
       return
     }
 
-    const { url, config } = JSON.parse(savedData)
+    videoUrlRef.current = url
+    setLoading(true)
 
-    async function fetchVideoInfo() {
-      if (!url.includes('bilibili.com')) {
-        toast.error('暂不支持该视频链接，请使用 bilibili.com 或 b23.tv 完整链接')
-        setState((prev) => ({ ...prev, loading: false, listLoading: false }))
-        return
-      }
-
-      const bvid = extractUrl(url)
-      if (!bvid) {
-        toast.error('无法从链接中解析视频ID，请检查链接格式')
-        setState((prev) => ({ ...prev, loading: false, listLoading: false }))
-        return
-      }
-
-      const page = extractPage(url, new URLSearchParams(url.split('?')[1]))
-
+    ;(async () => {
       try {
-        // 先获取视频信息
+        // b23.tv 短链先解析成完整地址
+        let realUrl = url
+        if (realUrl.includes('b23.tv')) {
+          const r = await fetch(`/api/b23tv?url=${encodeURIComponent(realUrl)}`)
+          if (r.ok) realUrl = (await r.json()).url || realUrl
+        }
+        if (!realUrl.includes('bilibili.com')) {
+          toast.error('暂仅支持 bilibili.com 视频链接')
+          setLoading(false)
+          return
+        }
+        videoUrlRef.current = realUrl
+        try {
+          localStorage.setItem(
+            `learning_${id}`,
+            JSON.stringify({ url: realUrl, timestamp: Date.now(), config: {} })
+          )
+        } catch {
+          /* ignore */
+        }
+
+        const bvid = extractUrl(realUrl)
+        if (!bvid) {
+          toast.error('无法解析视频 ID')
+          setLoading(false)
+          return
+        }
+        bvidRef.current = bvid
+        const page = extractPage(realUrl, new URLSearchParams(realUrl.split('?')[1]))
+
         const info = await getVideoInfo(bvid)
-        setState((prev) => ({
-          ...prev,
-          videoInfo: {
-            ...info,
-            service: VideoService.Bilibili,
-            videoId: bvid,
-            embedUrl: '', // 先设置为空
-            page: page ? Number(page) : 1,
-          },
-          listLoading: false,
-        }))
-
-        // 获取视频
-        setState((prev) => ({ ...prev, loading: true }))
-        const videoUrl = await getBiliVideo(url)
-
-        // 更新视频URL
-        setState((prev) => ({
-          ...prev,
-          loading: false,
-          videoInfo: prev.videoInfo
-            ? {
-                ...prev.videoInfo,
-                embedUrl: videoUrl,
-              }
-            : null,
-        }))
-
-        // 获取字幕
-        const subtitles = await getBiliSubtitles(url)
-        setState((prev) => ({
-          ...prev,
-          subtitles,
-        }))
+        setVideoInfo({
+          ...info,
+          service: VideoService.Bilibili,
+          videoId: bvid,
+          embedUrl: '',
+          page: page ? Number(page) : 1,
+        })
+        getBiliVideo(realUrl)
+          .then((videoUrl: string) => {
+            setVideoInfo((prev) => (prev ? { ...prev, embedUrl: videoUrl } : prev))
+            setLoading(false)
+          })
+          .catch(() => setLoading(false))
+        const subtitles = await getBiliSubtitles(realUrl)
+        setHasSubtitles(subtitles && subtitles.length > 0)
+        if (!subtitles || subtitles.length === 0) {
+          toast('该视频没有字幕，AI 课件功能需要字幕支持', { icon: '⚠️' })
+          pushTa('这个视频暂无字幕，AI 无法直接生成课件与实验。你仍可以观看视频并向我提问～', { speak: true })
+        }
       } catch (error: any) {
-        setState((prev) => ({
-          ...prev,
-          loading: false,
-          videoInfo: prev.videoInfo, // 保留已获取的视频信息
-        }))
+        setLoading(false)
         toast.error(error?.message || '视频加载失败')
       }
-    }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
 
-    fetchVideoInfo()
-  }, [id, router])
+  // ===== 课件生成（字幕就绪后自动触发一次） =====
+  const coursewareStartedRef = useRef(false)
+  useEffect(() => {
+    if (!id || !hasSubtitles || coursewareStartedRef.current) return
+    if (!bvidRef.current) return
+    coursewareStartedRef.current = true
+    pushTa('正在把这门课改编成课件，稍等片刻…', { kind: 'system', speak: false })
+    courseware.generate(bvidRef.current, videoInfo?.page, getBiliCookie(), videoInfo?.title)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSubtitles, id, videoInfo?.page])
 
-  const handlePartChange = async (page: number) => {
-    // 先更新页码，实现即时高亮
-    setState((prev) => ({
-      ...prev,
-      loading: true,
-      videoInfo: prev.videoInfo
-        ? {
-            ...prev.videoInfo,
-            page, // 立即更新页码
+  // ===== 课件完成 → 开场 + 出题 =====
+  const introDoneRef = useRef(false)
+  useEffect(() => {
+    if (introDoneRef.current) return
+    if (courseware.streaming || courseware.slides.length === 0) return
+    if (!coursewareStartedRef.current) return
+    introDoneRef.current = true
+
+    const title = videoInfo?.title || '本节课'
+    pushTa(
+      `欢迎来到 AI 教室！今天这节课是《${title}》。我已经把视频内容整理成了课件，左侧可以翻阅。想动手玩一玩的话，随时切到「可视化实验」，我来现场给你造一个。现在，先来几道题检验一下理解吧！`,
+      { speak: true }
+    )
+    // 生成互动题
+    quiz.generate(bvidRef.current, videoInfo?.page, getBiliCookie())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseware.streaming, courseware.slides, videoInfo?.title])
+
+  // ===== 出题完成 → 推送第一题 =====
+  const quizPushedRef = useRef<Set<number>>(new Set())
+  const [currentQuizIndex, setCurrentQuizIndex] = useState(0)
+  useEffect(() => {
+    if (quiz.questions.length === 0 || quiz.loading) return
+    if (quizPushedRef.current.size > 0) return
+    pushTa('第一题来了，选出你认为正确的答案：', { speak: false })
+    pushMessage({ role: 'ta', kind: 'quiz', quiz: quiz.questions[0], quizIndex: 0 })
+    quizPushedRef.current.add(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quiz.questions, quiz.loading])
+
+  // ===== 答题反馈 + 下一题 =====
+  const handleQuizAnswer = useCallback(
+    (correct: boolean, _msgId: string) => {
+      const idx = currentQuizIndex
+      pushTa(
+        correct
+          ? PRAISE[idx % PRAISE.length]
+          : `${ENCOURAGE[idx % ENCOURAGE.length]}${
+              quiz.questions[idx]?.time ? '可以点解析里的「跳回视频」回顾一下。' : ''
+            }`,
+        { speak: true }
+      )
+      const next = idx + 1
+      if (next < quiz.questions.length) {
+        setCurrentQuizIndex(next)
+        setTimeout(() => {
+          pushTa(`第 ${next + 1} 题：`, { speak: false })
+          pushMessage({ role: 'ta', kind: 'quiz', quiz: quiz.questions[next], quizIndex: next })
+          quizPushedRef.current.add(next)
+        }, 900)
+      } else {
+        setTimeout(() => {
+          pushTa(
+            '题目做完啦！接下来推荐你：① 翻左侧课件查漏补缺；② 打开「可视化实验」亲手玩一玩核心概念；③ 有任何疑问随时问我。',
+            { speak: true }
+          )
+        }, 1200)
+      }
+    },
+    [currentQuizIndex, quiz.questions, pushTa, pushMessage]
+  )
+
+  // ===== 翻页 → 助教讲解 =====
+  const lastSpokenSlideRef = useRef(-1)
+  const handleSlideNav = useCallback(
+    (index: number) => {
+      setSlideIndex(index)
+      const slide = courseware.slides[index]
+      if (slide && index !== lastSpokenSlideRef.current) {
+        lastSpokenSlideRef.current = index
+        if (slide.taNote) {
+          pushTa(slide.taNote, { time: slide.time ?? undefined, speak: true })
+        }
+      }
+    },
+    [courseware.slides, pushTa]
+  )
+
+  // ===== 用户提问 =====
+  const handleUserAsk = useCallback(
+    async (text: string) => {
+      setMessages((prev) => [...prev, { id: newMsgId(), role: 'user', content: text }])
+      setTaThinking(true)
+      setSheetOpen(true)
+      try {
+        const outline = courseware.slides
+          .slice(0, 8)
+          .map((s, i) => `${i + 1}. ${s.title}`)
+          .join('\n')
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'ta',
+            videoTitle: videoInfo?.title,
+            outline,
+            messages: [{ role: 'user', content: text }],
+          }),
+        })
+        if (!res.ok) throw new Error()
+        const reader = res.body?.getReader()
+        const decoder = new TextDecoder()
+        let reply = ''
+        const msgId = pushMessage({ role: 'ta', content: '' }, false)
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            reply += decoder.decode(value, { stream: true })
+            const r = reply
+            setMessages((prev) =>
+              prev.map((m) => (m.id === msgId ? { ...m, content: r } : m))
+            )
           }
-        : null,
-    }))
+        }
+        if (reply.trim()) tts.speak(reply.slice(0, 400))
+      } catch {
+        pushTa('哎呀，我走神了，再问一次试试？', { speak: false })
+      } finally {
+        setTaThinking(false)
+      }
+    },
+    [courseware.slides, videoInfo?.title, pushMessage, pushTa, tts]
+  )
 
-    try {
-      const savedData = localStorage.getItem(`learning_${id}`)
-      if (!savedData) return
+  // ===== 视频跳转 =====
+  const handleJumpVideo = useCallback(
+    (time: number) => {
+      setJumpRequest(time)
+      setTab('video')
+      toast.success(`已跳转至 ${Math.floor(time / 60)}:${String(Math.floor(time % 60)).padStart(2, '0')}`, { icon: '⏱' })
+    },
+    []
+  )
 
-      const { url } = JSON.parse(savedData)
-      const videoUrl = await getBiliVideo(url)
+  // ===== 生成交互实验 =====
+  const handleGenerateViz = useCallback(() => {
+    if (!bvidRef.current) return
+    setTab('viz')
+    viz.generate(bvidRef.current, {
+      pageNumber: videoInfo?.page,
+      cookie: getBiliCookie(),
+    })
+    pushTa('收到！我正在为你编写一个专属交互实验，完成后左侧就会展示，记得动手调一调参数～', { speak: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoInfo?.page, viz, pushTa])
 
-      // 只更新视频URL
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        videoInfo: prev.videoInfo
-          ? {
-              ...prev.videoInfo,
-              embedUrl: videoUrl,
-            }
-          : null,
-      }))
-    } catch (error) {
-      console.error('切换课程失败:', error)
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-      }))
-      toast.error('视频加载失败')
-    }
-  }
-
-  const handleTimeUpdate = (time: number) => {
-    setCurrentTime(time)
-  }
-
-  const handleTimeClick = (time: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = time
-    }
-  }
+  const TABS: { key: StageTab; label: string; icon: typeof FlaskConical; hint?: string }[] = [
+    { key: 'viz', label: '可视化实验', icon: FlaskConical },
+    { key: 'slides', label: 'AI 课件', icon: BookOpen, hint: courseware.streaming ? '生成中' : undefined },
+    { key: 'video', label: '视频', icon: PlayCircle },
+  ]
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
-      <Sidebar currentTime={currentTime} currentPage={state.videoInfo?.page} parts={state.videoInfo?.pages} />
-      <main className="ml-[240px] flex flex-1">
-        <div className="flex w-[60%] flex-col overflow-hidden">
-          <VideoPlayer
-            videoRef={videoRef}
-            videoInfo={state.videoInfo}
-            loading={state.loading}
-            onTimeUpdate={handleTimeUpdate}
-          />
+    <div className="flex h-screen flex-col overflow-hidden bg-[#040711] text-slate-100">
+      {/* ===== 顶栏 ===== */}
+      <header className="glass-strong z-30 flex items-center gap-3 px-4 py-2.5 sm:px-5">
+        <Link
+          href="/"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100/[0.06] text-slate-300 transition-colors hover:bg-slate-100/[0.12]"
+          aria-label="返回首页"
+        >
+          <ArrowLeft className="h-[18px] w-[18px]" />
+        </Link>
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/40 to-violet-500/40 text-base">
+            <GraduationCap className="h-5 w-5 text-cyan-200" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{videoInfo?.title || 'AI 教室'}</p>
+            <p className="truncate text-[11px] text-slate-500">
+              {videoInfo?.owner ? `${videoInfo.owner.name} · ` : ''}AI 可视化教学进行中
+            </p>
+          </div>
         </div>
-        <div className="w-[40%] overflow-hidden border-l border-gray-100 dark:border-gray-800/50">
-          <AINotes
-            subtitles={state.subtitles}
-            parts={state.videoInfo?.pages}
-            currentPage={state.videoInfo?.page}
-            bvid={state.videoInfo?.videoId}
-            onPartChange={handlePartChange}
-            currentTime={currentTime}
-            onTimeClick={handleTimeClick}
-            loading={state.listLoading}
-            learningId={id as string}
-          />
+        <div className="hidden items-center gap-2 text-[11px] text-slate-500 sm:flex">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
+          </span>
+          弘识智教
         </div>
-      </main>
+        <button
+          onClick={() => setShowBiliLogin(true)}
+          title="B 站账号（用于获取需要登录的字幕）"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100/[0.06] text-slate-400 transition-colors hover:bg-slate-100/[0.12] hover:text-cyan-300"
+          aria-label="B 站登录"
+        >
+          <Tv className="h-4 w-4" />
+        </button>
+      </header>
+
+      {/* B 站登录弹窗（获取字幕增强） */}
+      <BilibiliLogin show={showBiliLogin} onClose={() => setShowBiliLogin(false)} />
+
+      {/* ===== 主体 ===== */}
+      <div className="relative flex min-h-0 flex-1">
+        {/* 教学舞台 */}
+        <main className="flex min-w-0 flex-1 flex-col p-3 sm:p-4 md:pr-0 md:mr-0">
+          {/* Tab 栏 */}
+          <div className="mb-3 flex items-center gap-1.5 overflow-x-auto rounded-2xl bg-slate-100/[0.04] p-1.5">
+            {TABS.map(({ key, label, icon: Icon, hint }) => (
+              <button
+                key={key}
+                onClick={() => (key === 'viz' && !viz.html && !viz.streaming ? handleGenerateViz() : setTab(key))}
+                className={cn(
+                  'relative flex h-10 min-w-[104px] flex-1 items-center justify-center gap-1.5 rounded-xl text-[13px] font-medium transition-all sm:min-w-[120px]',
+                  tab === key
+                    ? 'bg-gradient-to-r from-cyan-500/25 to-violet-500/25 text-white shadow-inner'
+                    : 'text-slate-500 hover:bg-slate-100/[0.05] hover:text-slate-300'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+                {hint && (
+                  <span className="absolute right-2 top-1.5 flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-60" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* 舞台内容 */}
+          <div className="glass min-h-0 flex-1 overflow-hidden rounded-2xl">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={tab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+                className="h-full min-h-0"
+              >
+                {tab === 'viz' && <VisualizationStage viz={viz} onRegenerate={handleGenerateViz} />}
+                {tab === 'slides' && (
+                  <CoursewareView
+                    slides={courseware.slides}
+                    current={slideIndex}
+                    streaming={courseware.streaming}
+                    onNav={handleSlideNav}
+                    onJumpVideo={handleJumpVideo}
+                    error={
+                      courseware.error ||
+                      (!hasSubtitles && !loading && videoInfo
+                        ? '该视频没有可用字幕，无法生成 AI 课件。部分视频需登录 B 站后才能获取字幕（点右上角电视图标）。'
+                        : null)
+                    }
+                  />
+                )}
+                {tab === 'video' && (
+                  <div className="h-full min-h-0 overflow-y-auto scrollbar-thin p-3 sm:p-4">
+                    <VideoDock
+                      videoInfo={videoInfo}
+                      loading={loading}
+                      videoRef={videoRef}
+                      onTimeUpdate={() => {}}
+                      onJumpRequest={jumpRequest}
+                      onJumpHandled={() => setJumpRequest(null)}
+                    />
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </main>
+
+        {/* ===== 右侧 AI 助教（桌面侧栏 / 移动抽屉共用） ===== */}
+        <aside
+          className={cn(
+            'z-40 flex min-h-0 flex-col border-white/[0.07] bg-[#050a18]/95 backdrop-blur-xl transition-transform duration-300',
+            // 桌面：常驻右侧栏
+            'md:relative md:flex md:h-auto md:w-[340px] lg:w-[380px] md:translate-y-0 md:border-l md:pb-0',
+            // 移动：底部抽屉
+            sheetOpen
+              ? 'fixed inset-x-0 bottom-0 h-[62vh] rounded-t-2xl border-t pb-[env(safe-area-inset-bottom)]'
+              : 'fixed inset-x-0 bottom-0 hidden h-0 translate-y-full'
+          )}
+        >
+          <TeachingAssistant
+            messages={messages}
+            quizTotal={quiz.questions.length}
+            onQuizAnswer={handleQuizAnswer}
+            onJumpVideo={handleJumpVideo}
+            onUserAsk={handleUserAsk}
+            thinking={taThinking}
+            tts={tts}
+          />
+        </aside>
+
+        {/* 移动端：抽屉收起时的助教悬浮按钮 */}
+        <button
+          onClick={() => setSheetOpen(true)}
+          className={cn(
+            'fixed bottom-4 right-4 z-40 flex h-[52px] items-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-violet-600 px-5 text-sm font-semibold text-white shadow-xl shadow-cyan-500/30 transition-all active:scale-95',
+            'md:hidden',
+            sheetOpen && 'pointer-events-none opacity-0'
+          )}
+        >
+          <MessageCircle className="h-5 w-5" />
+          AI 助教
+        </button>
+
+        {/* 移动端：抽屉展开时的收起按钮 */}
+        <button
+          onClick={() => setSheetOpen(false)}
+          className={cn(
+            'absolute right-1/2 top-[calc(38vh+2px)] z-50 flex h-6 translate-x-1/2 items-center gap-1 rounded-full bg-slate-800/90 px-3 text-[10px] text-slate-400 backdrop-blur',
+            'md:hidden',
+            !sheetOpen && 'hidden'
+          )}
+        >
+          <ChevronUp className="h-3 w-3 rotate-180" />
+          收起助教
+        </button>
+      </div>
     </div>
   )
 }
 
-export default LearnPage
+export default ClassroomPage

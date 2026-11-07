@@ -1,25 +1,21 @@
-export default () => {
+import Link from 'next/link'
+
+export default function NotFound() {
   return (
-    <section className="bg-white dark:bg-gray-900">
-      <div className="mx-auto max-w-screen-xl py-8 px-4 lg:py-16 lg:px-6">
-        <div className="mx-auto max-w-screen-sm text-center">
-          <h1 className="text-primary-600 dark:text-primary-500 mb-4 text-7xl font-extrabold tracking-tight lg:text-9xl">
-            404
-          </h1>
-          <p className="mb-4 text-3xl font-bold tracking-tight text-gray-900 dark:text-white md:text-4xl">
-            Something's missing.
-          </p>
-          <p className="mb-4 text-lg font-light text-gray-500 dark:text-gray-400">
-            Sorry, we can't find that page. You'll find lots to explore on the home page.{' '}
-          </p>
-          <a
-            href="#"
-            className="bg-primary-600 hover:bg-primary-800 focus:ring-primary-300 dark:focus:ring-primary-900 my-4 inline-flex rounded-lg px-5 py-2.5 text-center text-sm font-medium focus:outline-none focus:ring-4"
-          >
-            Back to Homepage
-          </a>
-        </div>
-      </div>
-    </section>
+    <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#040711] px-6 text-center text-slate-100">
+      <p className="text-gradient-cyan-violet text-7xl font-extrabold tracking-tight sm:text-8xl">
+        404
+      </p>
+      <p className="text-xl font-semibold">这一课暂时不在这里</p>
+      <p className="max-w-sm text-sm text-slate-500">
+        页面可能已被移动或从未存在。回到首页，粘贴一个 B 站视频链接开始你的 AI 课堂吧。
+      </p>
+      <Link
+        href="/"
+        className="rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/25 transition-transform hover:scale-105 active:scale-95"
+      >
+        返回首页
+      </Link>
+    </div>
   )
 }

@@ -4,7 +4,10 @@ import type { NextFetchEvent, NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { SummarizeParams } from '~/lib/types'
 import { getCacheId } from '~/utils/getCacheId'
-import { ratelimitForFreeAccounts, ratelimitForIps } from '~/lib/upstash'
+import {
+  getRatelimitForFreeAccounts,
+  getRatelimitForIps,
+} from '~/lib/upstash'
 import { isDev } from '~/utils/env'
 
 const redis =
@@ -25,7 +28,7 @@ function redirectAuth(): NextResponse {
 
 function redirectShop(req: NextRequest): NextResponse {
   console.error('Account Limited')
-  return NextResponse.redirect(new URL('/shop', req.url))
+  return NextResponse.redirect(new URL('/', req.url))
 }
 
 export async function middleware(req: NextRequest, context: NextFetchEvent) {
@@ -38,16 +41,28 @@ export async function middleware(req: NextRequest, context: NextFetchEvent) {
       return NextResponse.next()
     }
 
+    const ratelimitForIps = getRatelimitForIps()
+    if (!ratelimitForIps) {
+      // 未配置限流 Redis：直接放行（缓存仍可用）
+      return NextResponse.next()
+    }
+
     const { success, remaining } = await ratelimitForIps.limit(ipIdentifier)
     console.log(`ip free user ${ipIdentifier}, remaining: ${remaining}`)
     if (!success) {
       const res = NextResponse.next()
+      // 未配置 Supabase：没有账号体系可回退，直接要求登录/限流
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        return redirectAuth()
+      }
       const supabase = createMiddlewareSupabaseClient({ req, res })
       const {
         data: { session },
       } = await supabase.auth.getSession()
       const userEmail = session?.user.email
       if (userEmail) {
+        const ratelimitForFreeAccounts = getRatelimitForFreeAccounts()
+        if (!ratelimitForFreeAccounts) return res
         const { success, remaining } = await ratelimitForFreeAccounts.limit(userEmail)
         console.log(`login user ${userEmail}, remaining: ${remaining}`)
         if (!success) {
