@@ -1,5 +1,6 @@
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
+import { logger } from './logger'
 
 /** Upstash 限流窗口的合法取值类型 */
 type RatelimitDuration = Parameters<typeof Ratelimit.fixedWindow>[1]
@@ -125,7 +126,7 @@ export async function consumeQuota(tier: QuotaTier, action: QuotaAction, key: st
       }
     } catch (error) {
       // Redis 故障时降级到内存限流，而不是直接放行
-      console.error('[quota] Upstash 不可用，降级到进程内限流', error)
+      logger.error('quota', '[quota] Upstash 不可用，降级到进程内限流', error)
     }
   }
   const res = memoryConsume(`${cacheKey}:${key}`, limit, QUOTA_WINDOW_MS)
@@ -149,7 +150,7 @@ export async function peekQuota(tier: QuotaTier, action: QuotaAction, key: strin
         backend: 'upstash',
       }
     } catch (error) {
-      console.error('[quota] peek 降级', error)
+      logger.error('quota', '[quota] peek 降级', error)
     }
   }
   return { ...memoryPeek(`${cacheKey}:${key}`, limit), limit, unlimited: false, backend: 'memory' }
@@ -168,7 +169,7 @@ export async function consumeRate(
       const res = await limiter.limit(key)
       return { allowed: res.success, remaining: Math.max(0, res.remaining), reset: res.reset }
     } catch (error) {
-      console.error('[quota] rate 降级', error)
+      logger.error('quota', '[quota] rate 降级', error)
     }
   }
   return memoryConsume(`rate:${limit}:${window}:${key}`, limit, windowSec * 1000)

@@ -6,6 +6,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "lint": "next lint",
+    "test": "vitest run",
     "prepare": "husky install"
   },
   "lint-staged": {
@@ -50,7 +52,8 @@
     "tailwindcss-animate": "^1.0.7",
     "undici": "^8.12.3",
     "ws": "^8.22.1",
-    "zod": "^3.21.4"
+    "zod": "^3.21.4",
+    "youtube-transcript": "^1.2.0"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.2",
@@ -69,7 +72,12 @@
     "prettier-plugin-tailwindcss": "^0.2.2",
     "semantic-release": "^20.1.1",
     "tailwindcss": "^3.2.4",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.35",
+    "eslint-plugin-security": "^3.0.0",
+    "vitest": "^2.1.8",
+    "@playwright/test": "^1.64.1"
   },
   "version": "2.38.0",
   "browser": {

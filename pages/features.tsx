@@ -5,6 +5,9 @@ import { LayoutGrid } from 'lucide-react'
 import { Nav } from '~/components/Nav'
 import { FeatureCatalog } from '~/components/FeatureCatalog'
 
+// 偏静态页：ISR 缓存 1 小时，降低重复渲染开销
+export const revalidate = 3600
+
 const HERO_TAGS = ['交互实验', '主页面', 'AI 教室', '隐藏能力', '视频来源', '配置状态']
 
 const FeaturesPage: NextPage = () => {

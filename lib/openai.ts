@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { logger } from './logger'
 
 export const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
@@ -112,7 +113,8 @@ export async function withRetry<T>(fn: (signal?: AbortSignal) => Promise<T>, opt
       wait = Math.min(wait, Math.max(remaining - 1000, 500))
       if (wait <= 0) throw err
 
-      console.warn(
+      logger.warn(
+        'openai',
         `[openai retry] attempt ${attempt} failed (status=${err?.status ?? 'network'}), ` +
           `retrying in ${Math.round(wait)}ms, elapsed ${elapsed}ms`,
       )

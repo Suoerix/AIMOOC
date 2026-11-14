@@ -5,6 +5,7 @@
 
 import type { NextApiRequest } from 'next'
 import type { NextRequest } from 'next/server'
+import { logger } from '../logger'
 
 type AnyRequest = NextRequest | NextApiRequest
 
@@ -55,8 +56,7 @@ export function rejectMethod(methods: readonly string[]): { statusCode: number; 
 
 /** 上游错误只在服务端记录，返回给客户端的一律是通用文案 */
 export function logInternalError(scope: string, error: unknown): void {
-  const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-  console.error(`[${scope}] ${detail}`)
+  logger.error(scope, error instanceof Error ? `${error.name}: ${error.message}` : String(error))
 }
 
 export function publicError(fallback = '服务暂时不可用，请稍后重试'): string {

@@ -1,8 +1,9 @@
 /**
- * YouTube 适配：oEmbed 取标题 / 作者，尽力尝试公开 timedtext 字幕。
- * 字幕获取的任何失败都降级为手动通道并返回中文提示，绝不向外抛出。
+ * YouTube 适配：oEmbed 取标题 / 作者，自动获取字幕（youtube-transcript 优先，
+ * 公开 timedtext 兜底）。任何失败都降级为手动通道并返回中文提示，绝不向外抛出。
  */
 
+import YoutubeTranscript from 'youtube-transcript'
 import { parseSubtitleText } from '~/utils/subtitleParser'
 import { safeVideoFetch, YOUTUBE_HOSTS } from '~/lib/video/types'
 import type { ResolvedVideo, ResolveOptions, TranscriptItem } from '~/lib/video/types'
@@ -32,6 +33,40 @@ export function extractYoutubeId(rawUrl: string): string {
   }
 }
 
+/** 通过 youtube-transcript 拉取中文字幕，失败返回空数组 */
+async function fetchYoutubeTranscript(videoId: string): Promise<TranscriptItem[]> {
+  try {
+    const items = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'zh' })
+    return items
+      .map((it) => ({
+        from: Math.max(0, Math.round(it.offset / 1000)),
+        to: Math.max(0, Math.round((it.offset + it.duration) / 1000)),
+        content: it.text,
+      }))
+      .filter((it) => it.content && it.content.trim())
+  } catch {
+    return []
+  }
+}
+
+/** 兜底：公开 timedtext 接口 */
+async function fetchTimedtext(videoId: string): Promise<TranscriptItem[]> {
+  try {
+    const timed =
+      'https://www.youtube.com/api/timedtext?v=' + encodeURIComponent(videoId) + '&lang=zh&fmt=vtt'
+    const response = await safeVideoFetch(timed, YOUTUBE_HOSTS)
+    if (response.ok) {
+      const body = await response.text()
+      if (body && body.trim() && body.indexOf('<transcript') === -1) {
+        return parseSubtitleText(body, 'vtt')
+      }
+    }
+  } catch {
+    // 忽略，降级
+  }
+  return []
+}
+
 export async function resolveYoutube(rawUrl: string, _options: ResolveOptions): Promise<ResolvedVideo> {
   const videoId = extractYoutubeId(rawUrl)
   let title = 'YouTube 视频'
@@ -52,21 +87,11 @@ export async function resolveYoutube(rawUrl: string, _options: ResolveOptions): 
     // oEmbed 不可用时保留占位标题，继续尝试字幕
   }
 
-  // 2) 尽力抓取公开 timedtext 字幕；空响应、XML 占位、网络异常一律视为无字幕
+  // 2) 自动字幕：youtube-transcript 优先，timedtext 兜底
   let transcript: TranscriptItem[] = []
   if (videoId) {
-    try {
-      const timed = 'https://www.youtube.com/api/timedtext?v=' + encodeURIComponent(videoId) + '&lang=zh&fmt=vtt'
-      const response = await safeVideoFetch(timed, YOUTUBE_HOSTS)
-      if (response.ok) {
-        const body = await response.text()
-        if (body && body.trim() && body.indexOf('<transcript') === -1) {
-          transcript = parseSubtitleText(body, 'vtt')
-        }
-      }
-    } catch {
-      transcript = []
-    }
+    transcript = await fetchYoutubeTranscript(videoId)
+    if (!transcript.length) transcript = await fetchTimedtext(videoId)
   }
 
   const hasTranscript = transcript.length > 0
@@ -82,7 +107,7 @@ export async function resolveYoutube(rawUrl: string, _options: ResolveOptions): 
       transcriptMode: hasTranscript ? 'auto' : 'manual',
     },
     transcript,
-    transcriptSource: hasTranscript ? 'youtube-timedtext' : 'none',
+    transcriptSource: hasTranscript ? 'youtube-transcript' : 'none',
     needsManualTranscript: !hasTranscript,
     notice: hasTranscript ? undefined : MANUAL_NOTICE,
   }

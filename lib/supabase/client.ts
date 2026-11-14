@@ -18,7 +18,6 @@ export function getSupabaseBrowserClient(): SupabaseClient | null {
   if (!isSupabaseConfigured()) return null
   if (!cached) {
     // 动态 require：避免在未配置环境变量的构建期触发校验
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { createBrowserSupabaseClient } = require('@supabase/auth-helpers-nextjs')
     cached = createBrowserSupabaseClient()
   }

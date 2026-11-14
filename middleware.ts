@@ -1,4 +1,3 @@
-import { createMiddlewareSupabaseClient } from '@supabase/auth-helpers-nextjs'
 import type { NextFetchEvent, NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { consumeQuota, consumeRate, quotaMessage, type QuotaAction, type QuotaTier } from '~/lib/quota'
@@ -45,6 +44,9 @@ async function resolveIdentity(req: NextRequest, res: NextResponse): Promise<{ t
   const ipKey = clientIpKey(req)
   if (!supabaseConfigured()) return { tier: 'anon', key: ipKey }
   try {
+    // 动态导入：避免把完整 Supabase 客户端打进 edge bundle（middleware 体积从 ~87kB 降下来）。
+    // 仅在配置了 Supabase 时才加载，未配置时根本不会触发。
+    const { createMiddlewareSupabaseClient } = await import('@supabase/auth-helpers-nextjs')
     const supabase = createMiddlewareSupabaseClient({ req, res })
     const { data } = await supabase.auth.getUser()
     if (data?.user?.id) return { tier: 'user', key: `user:${data.user.id}` }

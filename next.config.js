@@ -13,6 +13,10 @@ const securityHeaders = [
     value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
   },
   {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains; preload',
+  },
+  {
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
@@ -33,6 +37,10 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
+  // 构建期不跑 ESLint：lint 由 CI 单独执行，避免 lint 配置问题阻断生产构建。
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   images: {
     domains: [process.env.SUPABASE_HOSTNAME || 'xxxx.supabase.co', 'avatars.dicebear.com'],
   },

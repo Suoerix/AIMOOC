@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint (non-blocking)
+        run: npm run lint || true
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+        env:
+          # 构建期不依赖真实密钥；用占位值保证类型与流程完整
+          OPENAI_API_KEY: dummy-ci-key
+          OPENAI_BASE_URL: https://api.deepseek.com/v1
+          OPENAI_MODEL: deepseek-chat

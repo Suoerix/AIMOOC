@@ -48,3 +48,6 @@ pnpm-lock.yaml
 
 public/uploads/*
 !public/uploads/.gitkeep
+# 测试与临时缓存
+.vitest-tmp/
+node_modules/.vitest/
