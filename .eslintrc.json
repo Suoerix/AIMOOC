@@ -1,0 +1,16 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "plugins": ["security"],
+  "rules": {
+    "security/detect-eval-with-expression": "error",
+    "security/detect-child-process": "error",
+    "security/detect-new-buffer": "error",
+    "security/detect-non-literal-require": "warn",
+    "security/detect-object-injection": "warn",
+    "security/detect-possible-timing-attacks": "warn",
+    "security/detect-unsafe-regex": "warn",
+    "react/no-unescaped-entities": "off",
+    "@next/next/no-html-link-for-pages": "off"
+  },
+  "ignorePatterns": ["node_modules/", ".next/", "e2e/"]
+}

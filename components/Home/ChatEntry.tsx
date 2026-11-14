@@ -16,17 +16,37 @@ interface Bubble {
 }
 
 const QUICK_PROMPTS = [
-  { icon: '🎬', text: '我想用 B 站视频学习' },
+  { icon: '🎬', text: '我想用视频链接来学习' },
   { icon: '🚀', text: '帮我理解抛体运动' },
   { icon: '〰️', text: '什么是傅里叶变换' },
   { icon: '🪐', text: '太阳系是怎么运转的' },
 ]
 
-const BILI_LINK = /(https?:\/\/)?(www\.)?(bilibili\.com\/video\/[A-Za-z0-9]+|b23\.tv\/[A-Za-z0-9]+)/
+/**
+ * 视频来源提示。这里只负责「看起来像视频链接」的快速分流，
+ * 真正的域名白名单与 SSRF 校验在服务端 /api/video/resolve 里做。
+ */
+const VIDEO_HOST_HINT =
+  /(?:bilibili\.com|b23\.tv|youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|douyin\.com|iesdouyin\.com|ixigua\.com|v\.qq\.com|youku\.com|iqiyi\.com|\.(?:mp4|webm|ogg|m3u8)(?:\?|$))/i
+
+/** 抽出输入里的第一个 URL；省略协议时自动补 https */
+function extractVideoUrl(input: string): string | null {
+  const withProtocol = input.match(/https?:\/\/[^\s<>"'）)]+/i)
+  if (withProtocol) return withProtocol[0]
+  const bare = input.match(/(?:^|\s)((?:[a-z0-9-]+\.)+[a-z]{2,}\/[^\s<>"'）)]+)/i)
+  return bare ? `https://${bare[1]}` : null
+}
+
+function isVideoLink(input: string): boolean {
+  const url = extractVideoUrl(input)
+  return !!url && VIDEO_HOST_HINT.test(url)
+}
 
 /** 生成与旧版兼容的学习 id */
 function makeLearningId(url: string): string {
-  return btoa(url).replace(/[^a-zA-Z0-9]/g, '').substring(0, 9)
+  return btoa(url)
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .substring(0, 9)
 }
 
 export function ChatEntry({ onOpenCase }: ChatEntryProps) {
@@ -47,17 +67,14 @@ export function ChatEntry({ onOpenCase }: ChatEntryProps) {
     const input = (text ?? value).trim()
     if (!input || thinking) return
 
-    // B 站链接 → 进入 AI 教室
-    if (BILI_LINK.test(input)) {
-      const match = input.match(BILI_LINK)
-      const url = match![0].startsWith('http') ? match![0] : `https://${match![0]}`
+    // 任意受支持的视频链接 → 进入 AI 教室（来源解析在服务端完成）
+    const detectedUrl = extractVideoUrl(input)
+    if (detectedUrl && VIDEO_HOST_HINT.test(detectedUrl)) {
+      const url = detectedUrl
       toast.success('已识别视频链接，正在进入 AI 教室…', { icon: '🎬' })
       const id = makeLearningId(url)
       try {
-        localStorage.setItem(
-          `learning_${id}`,
-          JSON.stringify({ url, timestamp: Date.now(), config: {} })
-        )
+        localStorage.setItem(`learning_${id}`, JSON.stringify({ url, timestamp: Date.now(), config: {} }))
       } catch {
         /* ignore */
       }
@@ -124,7 +141,7 @@ export function ChatEntry({ onOpenCase }: ChatEntryProps) {
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value)
-    setLinkGlink(BILI_LINK.test(e.target.value))
+    setLinkGlink(isVideoLink(e.target.value))
     // 自动高度
     const el = e.target
     el.style.height = 'auto'
@@ -141,7 +158,7 @@ export function ChatEntry({ onOpenCase }: ChatEntryProps) {
   return (
     <div className="w-full max-w-3xl">
       {/* 对话气泡区 */}
-      <div className="mb-4 flex max-h-64 flex-col gap-3 overflow-y-auto scrollbar-thin">
+      <div className="scrollbar-thin mb-4 flex max-h-64 flex-col gap-3 overflow-y-auto">
         <AnimatePresence initial={false}>
           {bubbles.map((b, i) => (
             <motion.div
@@ -162,7 +179,7 @@ export function ChatEntry({ onOpenCase }: ChatEntryProps) {
                   'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
                   b.role === 'user'
                     ? 'rounded-br-md bg-gradient-to-br from-cyan-600/80 to-blue-700/80 text-white shadow-lg shadow-cyan-900/30'
-                    : 'glass rounded-bl-md text-slate-200'
+                    : 'glass rounded-bl-md text-slate-200',
                 )}
               >
                 {b.content || (
@@ -222,7 +239,7 @@ export function ChatEntry({ onOpenCase }: ChatEntryProps) {
         layout
         className={cn(
           'glass-strong relative rounded-2xl p-2 shadow-2xl shadow-black/40 transition-all duration-500',
-          linkGlow ? 'ring-2 ring-cyan-400/50' : 'ring-1 ring-white/5'
+          linkGlow ? 'ring-2 ring-cyan-400/50' : 'ring-1 ring-white/5',
         )}
       >
         {linkGlow && (
@@ -237,7 +254,7 @@ export function ChatEntry({ onOpenCase }: ChatEntryProps) {
             onChange={handleInput}
             onKeyDown={handleKeyDown}
             rows={1}
-            placeholder="描述你想学的内容，或粘贴 B 站视频链接（bilibili.com / b23.tv）…"
+            placeholder="描述你想学的内容，或粘贴视频链接（B 站 / YouTube / Vimeo / 抖音 / 西瓜 / 腾讯视频 / 优酷 / 爱奇艺 / 视频直链）…"
             className="max-h-40 min-h-[52px] flex-1 resize-none bg-transparent px-3 py-3.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
           />
           <button
@@ -247,7 +264,7 @@ export function ChatEntry({ onOpenCase }: ChatEntryProps) {
               'mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all',
               value.trim() && !thinking
                 ? 'bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30 hover:scale-105 active:scale-95'
-                : 'bg-slate-700/50 text-slate-500'
+                : 'bg-slate-700/50 text-slate-500',
             )}
             aria-label="发送"
           >
@@ -269,9 +286,7 @@ export function ChatEntry({ onOpenCase }: ChatEntryProps) {
               </span>
             )}
           </div>
-          <span className="hidden text-[11px] text-slate-600 sm:block">
-            Enter 发送 · Shift+Enter 换行
-          </span>
+          <span className="hidden text-[11px] text-slate-600 sm:block">Enter 发送 · Shift+Enter 换行</span>
         </div>
       </motion.div>
 

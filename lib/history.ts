@@ -29,6 +29,16 @@ export interface NoteRecord {
 const COURSES_KEY = 'aimooc_courses_v1'
 const NOTES_KEY = 'aimooc_notes_v1'
 
+/** 历史 / 笔记数组条数上限，防止 localStorage 无限膨胀 */
+const MAX_ITEMS = 200
+/** saveCourse 合并写窗口：60s 内的重复调用合并为一次落盘 + 一次云端 upsert */
+const SAVE_COURSE_FLUSH_MS = 60_000
+
+// —— 待写态：saveCourse 只更新内存，flushCourses 统一落盘 ——
+const pendingCourses = new Map<string, CourseRecord>()
+let courseFlushTimer: ReturnType<typeof setTimeout> | null = null
+let unloadListenerBound = false
+
 // ============================ 本地存储（兜底 / 离线） ============================
 
 function readLocal<T>(key: string): T[] {
@@ -39,6 +49,7 @@ function readLocal<T>(key: string): T[] {
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? (parsed as T[]) : []
   } catch {
+    // 解析异常时优雅降级为空数组，不影响主流程
     return []
   }
 }
@@ -46,14 +57,24 @@ function readLocal<T>(key: string): T[] {
 function writeLocal<T>(key: string, items: T[]) {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(key, JSON.stringify(items))
+    // 只保留最新 MAX_ITEMS 条（调用方传入的均已按时间倒序），写入全程 try/catch
+    window.localStorage.setItem(key, JSON.stringify(items.slice(0, MAX_ITEMS)))
   } catch {
-    /* 存储满时忽略 */
+    /* 存储满 / 隐私模式时忽略 */
   }
 }
 
+/** 本地课程列表 + 尚未落盘的待写记录（按最近学习时间倒序） */
+function coursesWithPending(): CourseRecord[] {
+  const map = new Map<string, CourseRecord>()
+  for (const c of readLocal<CourseRecord>(COURSES_KEY)) map.set(c.videoId, c)
+  // 用 forEach 遍历 Map，避免 es5 target 下 for...of 触发 downlevelIteration 报错
+  pendingCourses.forEach((r, id) => map.set(id, r))
+  return Array.from(map.values()).sort((a, b) => b.lastAt - a.lastAt)
+}
+
 export function listLocalCourses(): CourseRecord[] {
-  return readLocal<CourseRecord>(COURSES_KEY).sort((a, b) => b.lastAt - a.lastAt)
+  return coursesWithPending()
 }
 
 export function listLocalNotes(): NoteRecord[] {
@@ -63,7 +84,9 @@ export function listLocalNotes(): NoteRecord[] {
 /** 由视频链接生成稳定的课程 id（与主页跳转保持一致） */
 export function learningIdFromUrl(url: string): string {
   try {
-    return btoa(url).replace(/[^a-zA-Z0-9]/g, '').substring(0, 9)
+    return btoa(url)
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .substring(0, 9)
   } catch {
     return url.replace(/[^a-zA-Z0-9]/g, '').slice(-9)
   }
@@ -73,6 +96,68 @@ export function learningIdFromUrl(url: string): string {
 export function resumeHref(record: CourseRecord): string {
   const url = record.url || `https://www.bilibili.com/video/${record.videoId}`
   return `/learn/${learningIdFromUrl(url)}?url=${encodeURIComponent(url)}`
+}
+
+// ============================ 合并写 / 节流 ============================
+
+/**
+ * 把 60s 内累积的待写课程一次性落盘（一次 localStorage 写）并批量 upsert 到云端。
+ * localStorage 写入在首个 await 之前同步完成，因此页面卸载时调用也不会丢数据。
+ */
+async function flushCourses(): Promise<void> {
+  if (courseFlushTimer) {
+    clearTimeout(courseFlushTimer)
+    courseFlushTimer = null
+  }
+  if (pendingCourses.size === 0) return
+  const records = Array.from(pendingCourses.values())
+  pendingCourses.clear()
+
+  const map = new Map<string, CourseRecord>()
+  for (const c of readLocal<CourseRecord>(COURSES_KEY)) map.set(c.videoId, c)
+  for (const r of records) map.set(r.videoId, r)
+  writeLocal(
+    COURSES_KEY,
+    Array.from(map.values()).sort((a, b) => b.lastAt - a.lastAt),
+  )
+
+  // 云端：合并为一次批量 upsert，失败不影响本地
+  try {
+    const supabase = getSupabase()
+    const uid = await currentUserId()
+    if (supabase && uid) {
+      await supabase.from('user_courses').upsert(
+        records.map((r) => ({
+          user_id: uid,
+          video_id: r.videoId,
+          title: r.title,
+          subject: r.subject ?? null,
+          url: r.url ?? null,
+          progress: r.progress,
+          duration_sec: r.durationSec,
+          quiz_right: r.quizRight,
+          quiz_total: r.quizTotal,
+          last_at: new Date(r.lastAt).toISOString(),
+        })),
+      )
+    }
+  } catch {
+    /* 云端失败不影响本地 */
+  }
+}
+
+/** 卸载 / 切后台前同步落盘，避免节流窗口内的数据丢失 */
+function bindUnloadFlush(): void {
+  if (unloadListenerBound || typeof window === 'undefined') return
+  unloadListenerBound = true
+  const flush = () => {
+    void flushCourses()
+  }
+  window.addEventListener('pagehide', flush)
+  window.addEventListener('beforeunload', flush)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') void flushCourses()
+  })
 }
 
 // ============================ 云端（Supabase） ============================
@@ -161,12 +246,12 @@ export async function listNotes(): Promise<NoteRecord[]> {
   }
 }
 
-/** 合并/更新一条课程记录：本地立即生效，云端尽力同步 */
+/** 合并/更新一条课程记录：本地立即以内存态生效，60s 内重复调用合并为一次落盘 + 云端写入 */
 export async function saveCourse(
-  patch: Partial<CourseRecord> & { videoId: string; title: string }
+  patch: Partial<CourseRecord> & { videoId: string; title: string },
 ): Promise<CourseRecord> {
   const now = Date.now()
-  const local = listLocalCourses()
+  const local = coursesWithPending()
   const prev = local.find((c) => c.videoId === patch.videoId)
   const next: CourseRecord = {
     videoId: patch.videoId,
@@ -180,38 +265,23 @@ export async function saveCourse(
     lastAt: now,
     createdAt: prev?.createdAt ?? now,
   }
-  writeLocal(
-    COURSES_KEY,
-    [...local.filter((c) => c.videoId !== next.videoId), next]
-  )
-
-  const supabase = getSupabase()
-  const uid = await currentUserId()
-  if (supabase && uid) {
-    try {
-      await supabase.from('user_courses').upsert({
-        user_id: uid,
-        video_id: next.videoId,
-        title: next.title,
-        subject: next.subject ?? null,
-        url: next.url ?? null,
-        progress: next.progress,
-        duration_sec: next.durationSec,
-        quiz_right: next.quizRight,
-        quiz_total: next.quizTotal,
-        last_at: new Date(next.lastAt).toISOString(),
-      })
-    } catch {
-      /* 云端失败不影响本地 */
-    }
+  // 只更新内存待写态；同一 videoId 的连续调用在此合并（durationSec 等字段正确累加）
+  pendingCourses.set(next.videoId, next)
+  bindUnloadFlush()
+  if (!courseFlushTimer) {
+    courseFlushTimer = setTimeout(() => {
+      void flushCourses()
+    }, SAVE_COURSE_FLUSH_MS)
   }
   return next
 }
 
 export async function deleteCourse(videoId: string): Promise<void> {
+  // 先从待写态移除，避免后续 flush 把已删除记录复活
+  pendingCourses.delete(videoId)
   writeLocal(
     COURSES_KEY,
-    listLocalCourses().filter((c) => c.videoId !== videoId)
+    coursesWithPending().filter((c) => c.videoId !== videoId),
   )
   const supabase = getSupabase()
   const uid = await currentUserId()
@@ -235,9 +305,10 @@ export async function saveNote(note: Omit<NoteRecord, 'id' | 'updatedAt'> & { id
     updatedAt: now,
   }
   const local = listLocalNotes()
+  // 按更新时间倒序，配合 writeLocal 的条数上限保留最新 200 条
   writeLocal(
     NOTES_KEY,
-    [...local.filter((n) => n.id !== id), next]
+    [...local.filter((n) => n.id !== id), next].sort((a, b) => b.updatedAt - a.updatedAt),
   )
 
   const supabase = getSupabase()
@@ -262,7 +333,7 @@ export async function saveNote(note: Omit<NoteRecord, 'id' | 'updatedAt'> & { id
 export async function deleteNote(id: string): Promise<void> {
   writeLocal(
     NOTES_KEY,
-    listLocalNotes().filter((n) => n.id !== id)
+    listLocalNotes().filter((n) => n.id !== id),
   )
   const supabase = getSupabase()
   const uid = await currentUserId()
@@ -296,7 +367,7 @@ export async function syncLocalToCloud(): Promise<void> {
           quiz_right: c.quizRight,
           quiz_total: c.quizTotal,
           last_at: new Date(c.lastAt).toISOString(),
-        }))
+        })),
       )
     }
     const notes = listLocalNotes()
@@ -308,7 +379,7 @@ export async function syncLocalToCloud(): Promise<void> {
           title: n.title,
           content: n.content,
           updated_at: new Date(n.updatedAt).toISOString(),
-        }))
+        })),
       )
     }
   } catch {

@@ -21,8 +21,8 @@ export function VisualizationStage({ viz, onRegenerate }: VisualizationStageProp
         <div>
           <h3 className="text-lg font-semibold text-slate-100">生成本课专属交互实验</h3>
           <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">
-            AI 将分析视频知识点，为你现场构建一个可动手操作的可视化实验
-            —— 调参数、看变化、做类比，比看视频更能建立直觉。
+            AI 将分析视频知识点，为你现场构建一个可动手操作的可视化实验 ——
+            调参数、看变化、做类比，比看视频更能建立直觉。
           </p>
         </div>
         <button
@@ -41,7 +41,7 @@ export function VisualizationStage({ viz, onRegenerate }: VisualizationStageProp
     return (
       <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
         <div className="relative flex h-20 w-20 items-center justify-center">
-          <span className="animate-ping absolute inset-0 rounded-full bg-violet-400/20" />
+          <span className="absolute inset-0 animate-ping rounded-full bg-violet-400/20" />
           <div className="relative flex h-20 w-20 items-center justify-center rounded-3xl border border-violet-400/25 bg-gradient-to-br from-violet-500/15 to-fuchsia-500/15">
             <Loader2 className="h-9 w-9 animate-spin text-violet-300" />
           </div>
@@ -49,11 +49,12 @@ export function VisualizationStage({ viz, onRegenerate }: VisualizationStageProp
         <div className="w-64">
           <p className="text-sm font-medium text-slate-200">{viz.progress || '正在生成实验…'}</p>
           <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100/10">
-            <div className="h-full animate-pulse rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400" style={{ width: '60%' }} />
+            <div
+              className="h-full animate-pulse rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400"
+              style={{ width: '60%' }}
+            />
           </div>
-          <p className="mt-3 text-[11px] text-slate-600">
-            交互实验由 AI 现场编写，通常需要 20-60 秒，生成一次后会缓存
-          </p>
+          <p className="mt-3 text-[11px] text-slate-600">交互实验由 AI 现场编写，通常需要 20-60 秒，生成一次后会缓存</p>
         </div>
       </div>
     )
@@ -87,7 +88,10 @@ export function VisualizationStage({ viz, onRegenerate }: VisualizationStageProp
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-violet-400/20 bg-[#050914]">
         <iframe
           srcDoc={viz.html as string}
-          sandbox="allow-scripts allow-forms allow-popups"
+          // 服务端已用 sanitizeGeneratedHtml 净化（去脚本 / 去外链 / 去事件属性），
+          // sandbox 仅保留 allow-scripts，移除 allow-popups / allow-forms，杜绝弹窗与表单外发
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
           title="AI 生成的可视化实验"
           className="h-full w-full border-0"
         />

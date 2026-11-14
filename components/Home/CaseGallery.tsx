@@ -10,13 +10,29 @@ interface CaseCardProps {
   onOpen: (caseId: string) => void
 }
 
-/** 案例卡片：live iframe 缩放预览（交互可用） */
+/** 案例卡片：仅当进入视口时才挂载 live iframe，避免首页常驻多个 canvas / rAF 动画 */
 export function CaseCard({ teachingCase, index, onOpen }: CaseCardProps) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(0.35)
+  const [visible, setVisible] = useState(false)
   // 预览按固定逻辑视口创作，等比缩放
   const PREVIEW_W = 960
   const PREVIEW_H = 520
+
+  // 视口可见性：不可见时卸载 iframe（渲染静态占位），从源头消除离屏 rAF 常驻
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true)
+      return
+    }
+    const io = new IntersectionObserver((entries) => setVisible(entries[0]?.isIntersecting ?? false), {
+      rootMargin: '100px',
+    })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
 
   useEffect(() => {
     const el = wrapRef.current
@@ -39,7 +55,7 @@ export function CaseCard({ teachingCase, index, onOpen }: CaseCardProps) {
       whileHover={{ y: -6 }}
       className={cn(
         'group relative flex flex-col overflow-hidden rounded-2xl text-left',
-        'glass-strong transition-shadow duration-300'
+        'glass-strong transition-shadow duration-300',
       )}
       style={{ boxShadow: `0 0 0 0 ${teachingCase.accent}00` }}
     >
@@ -53,14 +69,25 @@ export function CaseCard({ teachingCase, index, onOpen }: CaseCardProps) {
 
       {/* Live 预览 */}
       <div ref={wrapRef} className="relative aspect-[960/520] w-full overflow-hidden bg-[#050914]">
-        <iframe
-          srcDoc={teachingCase.html}
-          sandbox="allow-scripts allow-forms allow-popups"
-          title={teachingCase.title}
-          className="absolute left-0 top-0 origin-top-left border-0"
-          style={{ width: PREVIEW_W, height: PREVIEW_H, transform: `scale(${scale})` }}
-          loading="lazy"
-        />
+        {visible ? (
+          <iframe
+            srcDoc={teachingCase.html}
+            // 静态案例内容可信，但仍收紧 sandbox：去掉 allow-popups / allow-forms
+            sandbox="allow-scripts"
+            title={teachingCase.title}
+            className="absolute left-0 top-0 origin-top-left border-0"
+            style={{ width: PREVIEW_W, height: PREVIEW_H, transform: `scale(${scale})` }}
+            loading="lazy"
+          />
+        ) : (
+          // 静态占位：不渲染 iframe，不触发任何脚本 / canvas / rAF
+          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#070b16] to-[#0b1024]">
+            <div className="flex flex-col items-center gap-2 opacity-60">
+              <span className="text-3xl">{teachingCase.icon}</span>
+              <span className="text-[11px] text-slate-500">交互预览 · 进入视口加载</span>
+            </div>
+          </div>
+        )}
         {/* 遮罩层：预览可交互但点击卡片主体跳转，采用「点击即进入」的轻交互模式 */}
         <div className="absolute inset-0 cursor-pointer" />
 
@@ -93,19 +120,12 @@ export function CaseCard({ teachingCase, index, onOpen }: CaseCardProps) {
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex items-center gap-2">
           <span className="text-lg leading-none">{teachingCase.icon}</span>
-          <h3 className="text-[15px] font-semibold text-slate-100">
-            {teachingCase.title}
-          </h3>
+          <h3 className="text-[15px] font-semibold text-slate-100">{teachingCase.title}</h3>
         </div>
-        <p className="line-clamp-2 text-xs leading-relaxed text-slate-400">
-          {teachingCase.description}
-        </p>
+        <p className="line-clamp-2 text-xs leading-relaxed text-slate-400">{teachingCase.description}</p>
         <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
           {teachingCase.tags.map((tag) => (
-            <span
-              key={tag}
-              className="rounded-md bg-slate-100/[0.06] px-2 py-0.5 text-[10.5px] text-slate-500"
-            >
+            <span key={tag} className="rounded-md bg-slate-100/[0.06] px-2 py-0.5 text-[10.5px] text-slate-500">
               {tag}
             </span>
           ))}

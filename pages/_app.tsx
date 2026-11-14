@@ -23,6 +23,8 @@ function MyApp({
 }: AppProps<{
   initialSession: Session
 }>) {
+  // 统一使用 client.ts 的 cookie 客户端单例：SessionContextProvider 与 AuthProvider
+  // 共享同一实例，登录态写入 cookie 后服务端 createServerSupabaseClient 才能读取并验签。
   // 未配置 Supabase 时为 null，此时跳过 SessionContextProvider
   const [supabaseClient] = useState(() => getSupabaseBrowserClient())
 
@@ -30,9 +32,7 @@ function MyApp({
     <ThemeProvider attribute="class" forcedTheme="dark" enableSystem={false}>
       <TooltipProvider>
         <AuthProvider>
-          <div
-            className={`min-h-screen bg-[#040711] font-sans text-slate-100 antialiased ${fontSans.variable}`}
-          >
+          <div className={`min-h-screen bg-[#040711] font-sans text-slate-100 antialiased ${fontSans.variable}`}>
             <Component {...pageProps} />
           </div>
           <Toaster />
@@ -44,10 +44,7 @@ function MyApp({
   if (!supabaseClient) return shell
 
   return (
-    <SessionContextProvider
-      supabaseClient={supabaseClient}
-      initialSession={pageProps.initialSession}
-    >
+    <SessionContextProvider supabaseClient={supabaseClient} initialSession={pageProps.initialSession}>
       {shell}
     </SessionContextProvider>
   )

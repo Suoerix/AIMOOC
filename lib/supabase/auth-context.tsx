@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { getSupabase, isSupabaseConfigured } from '~/lib/supabase'
+// 统一使用 client.ts 的 cookie 客户端单例（与 SessionContextProvider 共用同一实例）；
+// 保留 getSupabase 之名仅为兼容既有调用，实际指向 getSupabaseBrowserClient。
+import { getSupabaseBrowserClient as getSupabase, isSupabaseConfigured } from '~/lib/supabase/client'
 
 export interface AuthState {
   user: User | null
@@ -56,10 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const value = useMemo<AuthState>(
-    () => ({ user, loading, configured }),
-    [user, loading, configured]
-  )
+  const value = useMemo<AuthState>(() => ({ user, loading, configured }), [user, loading, configured])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

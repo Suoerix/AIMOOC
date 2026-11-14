@@ -3,63 +3,45 @@ import { Redis } from '@upstash/redis'
 import { FREE_LIMIT_COUNT, LOGIN_LIMIT_COUNT } from '~/utils/constants'
 
 /**
- * 懒加载限流器：仅在配置了 Upstash 环境变量时创建实例。
- * （此前模块顶层直接 new Redis，缺少 env 时任何 import 该模块的
- *   API 路由在冷启动即抛错 —— 已改为按需创建。）
+ * 旧版 summary 接口保留的限流器。
+ * 修复：Redis 客户端改为单例（旧实现每次调用 getRedis() 都 new Redis，
+ * 且 getRatelimitForIps() 内部会调用两次，冷启动与 GC 开销明显）。
  */
 
+let redisInstance: Redis | null | undefined
 let ratelimitForIpsInstance: Ratelimit | null = null
 let ratelimitForApiKeyIpsInstance: Ratelimit | null = null
 let ratelimitForFreeAccountsInstance: Ratelimit | null = null
 
 function getRedis(): Redis | null {
-  const url = process.env.UPSTASH_RATE_REDIS_REST_URL
-  const token = process.env.UPSTASH_RATE_REDIS_REST_TOKEN
-  if (!url || !token) return null
-  return new Redis({ url, token })
+  if (redisInstance !== undefined) return redisInstance
+  const url = process.env.UPSTASH_RATE_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_RATE_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
+  redisInstance = url && token ? new Redis({ url, token }) : null
+  return redisInstance
 }
 
-function getRedisOrThrow(): Redis {
+function build(limit: number): Ratelimit | null {
   const redis = getRedis()
-  if (!redis) {
-    throw new Error('Missing UPSTASH_RATE_REDIS_REST_URL / UPSTASH_RATE_REDIS_REST_TOKEN')
-  }
-  return redis
+  if (!redis) return null
+  return new Ratelimit({
+    redis,
+    limiter: Ratelimit.fixedWindow(limit, '1 d'),
+    analytics: true,
+  })
 }
 
-/** 未配置 Redis 时返回 null（调用方应直接放行） */
 export function getRatelimitForIps(): Ratelimit | null {
-  if (!getRedis()) return null
-  if (!ratelimitForIpsInstance) {
-    ratelimitForIpsInstance = new Ratelimit({
-      redis: getRedisOrThrow(),
-      limiter: Ratelimit.fixedWindow(FREE_LIMIT_COUNT, '1 d'),
-      analytics: true,
-    })
-  }
+  if (!ratelimitForIpsInstance) ratelimitForIpsInstance = build(FREE_LIMIT_COUNT)
   return ratelimitForIpsInstance
 }
 
 export function getRatelimitForApiKeyIps(): Ratelimit | null {
-  if (!getRedis()) return null
-  if (!ratelimitForApiKeyIpsInstance) {
-    ratelimitForApiKeyIpsInstance = new Ratelimit({
-      redis: getRedisOrThrow(),
-      limiter: Ratelimit.fixedWindow(FREE_LIMIT_COUNT * 2, '1 d'),
-      analytics: true,
-    })
-  }
+  if (!ratelimitForApiKeyIpsInstance) ratelimitForApiKeyIpsInstance = build(FREE_LIMIT_COUNT * 2)
   return ratelimitForApiKeyIpsInstance
 }
 
 export function getRatelimitForFreeAccounts(): Ratelimit | null {
-  if (!getRedis()) return null
-  if (!ratelimitForFreeAccountsInstance) {
-    ratelimitForFreeAccountsInstance = new Ratelimit({
-      redis: getRedisOrThrow(),
-      limiter: Ratelimit.fixedWindow(LOGIN_LIMIT_COUNT, '1 d'),
-      analytics: true,
-    })
-  }
+  if (!ratelimitForFreeAccountsInstance) ratelimitForFreeAccountsInstance = build(LOGIN_LIMIT_COUNT)
   return ratelimitForFreeAccountsInstance
 }

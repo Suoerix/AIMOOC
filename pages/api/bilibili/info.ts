@@ -1,21 +1,29 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { biliHeaders, biliFetchRaw } from '~/lib/bilibili/server'
+import { getBiliSession } from '~/lib/bilibili/session'
+import { methodAllowed, rejectMethod, logInternalError, publicError } from '~/lib/security/request'
+import { LIMITS } from '~/lib/security/input'
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
+const BVID_RE = /^BV[a-zA-Z0-9]+$/
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (!methodAllowed(req, ['GET'])) {
+    const r = rejectMethod(['GET'])
+    return res.status(r.statusCode).json(r.body)
+  }
+
   const { bvid } = req.query
-
-  if (!bvid) {
-    return res.status(400).json({ error: 'Missing bvid parameter' })
+  if (!bvid || typeof bvid !== 'string' || bvid.length > LIMITS.urlChars || !BVID_RE.test(bvid)) {
+    return res.status(400).json({ error: 'Missing or invalid bvid parameter' })
   }
 
   try {
+    // 凭证只从 httpOnly 会话读取，忽略客户端可能伪造的 cookie 字段
+    const cookie = getBiliSession(req)
     const response = await biliFetchRaw(
-      `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`,
-      biliHeaders(),
-      { withBuvid: true }
+      `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`,
+      biliHeaders(cookie),
+      { withBuvid: true },
     )
 
     if (!response.ok) {
@@ -24,11 +32,12 @@ export default async function handler(
 
     const data = await response.json()
     if (data.code !== 0) {
-      return res.status(404).json({ error: data.message || 'Video not found' })
+      // 不回显上游业务错误信息
+      return res.status(404).json({ error: publicError('Video not found') })
     }
-    res.status(200).json(data)
+    return res.status(200).json(data)
   } catch (error) {
-    console.error('Error fetching video info:', error)
-    res.status(500).json({ error: 'Failed to fetch video info' })
+    logInternalError('bilibili/info', error)
+    return res.status(500).json({ error: publicError() })
   }
 }
