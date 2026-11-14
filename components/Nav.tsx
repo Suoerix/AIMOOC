@@ -16,6 +16,7 @@ import {
   LayoutGrid,
   Layers,
   User,
+  BookOpen,
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import {
@@ -39,6 +40,7 @@ const LINKS = [
   { href: '/notes', label: '笔记', icon: StickyNote, key: 'notes' },
   { href: '/progress', label: '进度', icon: Gauge, key: 'progress' },
   { href: '/features', label: '功能全览', icon: Layers, key: 'features' },
+  { href: '/courses', label: '课程', icon: BookOpen, key: 'courses' },
   { href: '/tech', label: '技术栈', icon: Cpu, key: 'tech' },
   { href: '/admin', label: '后台', icon: BarChart3, key: 'admin' },
 ]

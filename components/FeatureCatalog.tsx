@@ -231,6 +231,15 @@ const PAGE_CARDS: FeatureCardData[] = [
     icon: Home,
   },
   {
+    name: '课程体系',
+    desc: '把 B站合集 / YouTube 播放列表（或一串视频链接）变成一门课，自动生成有序学习路径，每集接入 AI 教室。',
+    href: '/courses',
+    hrefLabel: '进入课程',
+    status: 'available',
+    icon: BookOpen,
+    note: '新增能力：合集一键成课 + 学习路径 + 逐集进度。',
+  },
+  {
     name: '学习历史',
     desc: '回看已学课程、学习时长与最近记录。',
     href: '/history',
