@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mail, Lock, User, LogIn, UserPlus, Github, X, ShieldCheck } from 'lucide-react'
 import { toast } from 'react-hot-toast'
-import { getSupabase } from '~/lib/supabase'
+// 统一使用 client.ts 的 cookie 客户端单例，登录态写入 cookie 供服务端验签
+import { getSupabaseBrowserClient as getSupabase } from '~/lib/supabase/client'
 import { useAuth } from '~/lib/supabase/auth-context'
 import { cn } from '~/lib/utils'
 
@@ -67,8 +68,8 @@ export function AuthModal({ open, onClose, defaultTab = 'signin' }: AuthModalPro
         msg.includes('Invalid login credentials')
           ? '邮箱或密码不正确'
           : msg.includes('already registered')
-            ? '该邮箱已注册，请直接登录'
-            : msg
+          ? '该邮箱已注册，请直接登录'
+          : msg,
       )
     } finally {
       setLoading(false)
@@ -110,9 +111,7 @@ export function AuthModal({ open, onClose, defaultTab = 'signin' }: AuthModalPro
                 <h3 className="text-xl font-semibold text-slate-100">
                   {tab === 'signin' ? '登录弘识智教' : '创建账号'}
                 </h3>
-                <p className="mt-1 text-xs text-slate-500">
-                  登录后可同步学习历史、笔记与进度，并获得更高 AI 生成额度
-                </p>
+                <p className="mt-1 text-xs text-slate-500">登录后可同步学习历史、笔记与进度，并获得更高 AI 生成额度</p>
               </div>
               <button
                 onClick={onClose}
@@ -145,7 +144,7 @@ export function AuthModal({ open, onClose, defaultTab = 'signin' }: AuthModalPro
                     'flex h-9 items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium transition-all',
                     tab === key
                       ? 'bg-gradient-to-r from-cyan-500/25 to-violet-500/25 text-white'
-                      : 'text-slate-500 hover:text-slate-300'
+                      : 'text-slate-500 hover:text-slate-300',
                   )}
                 >
                   <Icon className="h-3.5 w-3.5" />

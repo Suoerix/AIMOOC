@@ -14,14 +14,40 @@ import {
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { Nav } from '~/components/Nav'
-import {
-  AreaTrend,
-  BarSeries,
-  DonutChart,
-  RankBars,
-  StatTile,
-} from '~/components/admin/Charts'
+import { AreaTrend, BarSeries, DonutChart, RankBars, StatTile } from '~/components/admin/Charts'
 import { useAuth } from '~/lib/supabase/auth-context'
+import type { GetServerSideProps } from 'next'
+import { createServerSupabaseClient } from '@supabase/auth-helpers-nextjs'
+import { isSupabaseConfigured } from '~/lib/supabase/client'
+import { isAdminUser } from '~/lib/supabase/server'
+import { logInternalError } from '~/lib/security/request'
+
+/**
+ * 服务端守卫：/admin 不再只靠客户端判断。
+ * 未配置 Supabase 的 demo 模式允许访问；配置后必须 getUser() 验签且为管理员，
+ * 否则临时重定向回首页（与 /api/admin/stats 的鉴权保持一致）。
+ */
+export const getServerSideProps: GetServerSideProps = async (context) => {
+  if (!isSupabaseConfigured()) {
+    return { props: {} }
+  }
+  try {
+    const supabase = createServerSupabaseClient(context)
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser()
+    if (error) logInternalError('admin.page.getUser', error)
+    const admin = await isAdminUser(user ? { id: user.id, email: user.email } : null)
+    if (!admin) {
+      return { redirect: { destination: '/', permanent: false } }
+    }
+  } catch (error) {
+    logInternalError('admin.page', error)
+    return { redirect: { destination: '/', permanent: false } }
+  }
+  return { props: {} }
+}
 
 interface StatsResponse {
   demo: boolean
@@ -103,20 +129,14 @@ export default function AdminPage() {
                 </span>
               )}
             </div>
-            <p className="mt-2 text-sm text-slate-500">
-              用户规模、学习时长与热门内容 —— 平台运营的全景视图
-            </p>
+            <p className="mt-2 text-sm text-slate-500">用户规模、学习时长与热门内容 —— 平台运营的全景视图</p>
           </div>
           <button
             onClick={load}
             disabled={loading}
             className="flex h-10 items-center gap-1.5 rounded-xl bg-white/[0.05] px-4 text-[13px] text-slate-300 transition-colors hover:bg-white/[0.09] disabled:opacity-50"
           >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             刷新数据
           </button>
         </motion.div>
@@ -133,14 +153,11 @@ export default function AdminPage() {
               <p className="text-sm font-medium text-slate-200">{denied}</p>
               <p className="mt-2 max-w-md text-xs leading-relaxed text-slate-500">
                 把管理员邮箱加入环境变量 <code className="text-cyan-300">SUPABASE_ADMIN_EMAILS</code>
-                ，或在 Supabase 的 <code className="text-cyan-300">user_profiles</code>{' '}
-                表中把该账号的 <code className="text-cyan-300">role</code> 设为{' '}
-                <code className="text-cyan-300">admin</code>。
+                ，或在 Supabase 的 <code className="text-cyan-300">user_profiles</code> 表中把该账号的{' '}
+                <code className="text-cyan-300">role</code> 设为 <code className="text-cyan-300">admin</code>。
               </p>
             </div>
-            {!user && (
-              <p className="text-[11px] text-slate-600">当前未登录 —— 请先登录管理员账号</p>
-            )}
+            {!user && <p className="text-[11px] text-slate-600">当前未登录 —— 请先登录管理员账号</p>}
           </motion.div>
         )}
 
@@ -201,9 +218,7 @@ export default function AdminPage() {
               >
                 <div className="mb-4 flex items-center justify-between">
                   <div>
-                    <h2 className="text-[15px] font-semibold text-slate-100">
-                      学习时长趋势
-                    </h2>
+                    <h2 className="text-[15px] font-semibold text-slate-100">学习时长趋势</h2>
                     <p className="mt-1 text-[11px] text-slate-500">最近 14 天累计分钟数</p>
                   </div>
                   <span className="rounded-lg bg-cyan-400/10 px-2.5 py-1 font-mono text-[11px] text-cyan-300">
@@ -240,17 +255,12 @@ export default function AdminPage() {
               >
                 <div className="mb-4 flex items-center justify-between">
                   <div>
-                    <h2 className="text-[15px] font-semibold text-slate-100">
-                      热门学习内容 Top 10
-                    </h2>
+                    <h2 className="text-[15px] font-semibold text-slate-100">热门学习内容 Top 10</h2>
                     <p className="mt-1 text-[11px] text-slate-500">按累计学习时长排序</p>
                   </div>
                   <BookOpen className="h-4 w-4 text-slate-600" />
                 </div>
-                <RankBars
-                  data={stats.topContent}
-                  valueFormat={(n) => `${n} 分钟`}
-                />
+                <RankBars data={stats.topContent} valueFormat={(n) => `${n} 分钟`} />
               </motion.div>
 
               <motion.div
@@ -288,24 +298,23 @@ export default function AdminPage() {
               <div className="mt-3 grid gap-3 text-[12px] leading-relaxed text-slate-500 sm:grid-cols-3">
                 <p>
                   <span className="text-slate-300">埋点：</span>
-                  教室页每 30 秒上报一次学习事件到{' '}
-                  <code className="text-cyan-300">study_events</code> 表，记录课程、学科与停留时长。
+                  教室页每 30 秒上报一次学习事件到 <code className="text-cyan-300">study_events</code>{' '}
+                  表，记录课程、学科与停留时长。
                 </p>
                 <p>
                   <span className="text-slate-300">聚合：</span>
-                  <code className="text-cyan-300">/api/admin/stats</code>{' '}
-                  使用 service role 读取并聚合，仅管理员可访问。
+                  <code className="text-cyan-300">/api/admin/stats</code> 使用 service role 读取并聚合，仅管理员可访问。
                 </p>
                 <p>
                   <span className="text-slate-300">权限：</span>
-                  管理员由 <code className="text-cyan-300">SUPABASE_ADMIN_EMAILS</code>{' '}
-                  白名单或 <code className="text-cyan-300">user_profiles.role</code> 判定。
+                  管理员由 <code className="text-cyan-300">SUPABASE_ADMIN_EMAILS</code> 白名单或{' '}
+                  <code className="text-cyan-300">user_profiles.role</code> 判定。
                 </p>
               </div>
               {stats.demo && (
                 <p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2 text-[11.5px] text-amber-200/80">
-                  当前展示的是演示数据。配置 Supabase（NEXT_PUBLIC_SUPABASE_URL /
-                  SUPABASE_SERVICE_ROLE_KEY）并执行 supabase/schema.sql 后，这里将显示真实数据。
+                  当前展示的是演示数据。配置 Supabase（NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY）并执行
+                  supabase/schema.sql 后，这里将显示真实数据。
                 </p>
               )}
             </motion.div>

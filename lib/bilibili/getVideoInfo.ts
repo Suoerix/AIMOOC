@@ -2,7 +2,7 @@ import { VideoInfo } from '~/lib/types'
 
 export async function getVideoInfo(bvid: string): Promise<Partial<VideoInfo>> {
   try {
-    const response = await fetch(`/api/bilibili/info?bvid=${bvid}`)
+    const response = await fetch(`/api/bilibili/info?bvid=${encodeURIComponent(bvid)}`)
 
     if (!response.ok) {
       throw new Error('获取视频信息失败')
@@ -19,12 +19,12 @@ export async function getVideoInfo(bvid: string): Promise<Partial<VideoInfo>> {
       description: data.desc,
       owner: {
         name: data.owner.name,
-        face: data.owner.face
+        face: data.owner.face,
       },
-      pages: data.pages
+      pages: data.pages,
     }
   } catch (error) {
     console.error('获取视频信息失败:', error)
     throw error
   }
-} 
+}

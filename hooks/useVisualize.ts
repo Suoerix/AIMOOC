@@ -1,6 +1,11 @@
 import { useCallback, useState } from 'react'
+import type { TranscriptItem } from '~/lib/video/types'
 
-const CACHE_PREFIX = 'aimooc_visual_'
+// 版本后缀：升级后不再复用旧版（未净化）缓存，避免渲染历史遗留的危险 HTML
+const CACHE_PREFIX = 'aimooc_visual_v2_'
+// 与服务端 LIMITS.cacheValueChars 保持一致。
+// 客户端不直接 import lib/security/input.ts（该模块依赖 sanitize-html，属于 Node 端）。
+const MAX_CACHE_VALUE_CHARS = 200_000
 
 /** 提取 LLM 输出中的 HTML 文档（容错：去 Markdown 代码块包裹） */
 function extractHtml(text: string): string {
@@ -27,7 +32,12 @@ export interface UseVisualizeResult {
   error: string | null
   generate: (
     videoId: string,
-    opts?: { pageNumber?: string | number; cookie?: string; topic?: string }
+    opts?: {
+      pageNumber?: string | number
+      cookie?: string
+      topic?: string
+      transcript?: TranscriptItem[]
+    },
   ) => Promise<void>
   reset: () => void
 }
@@ -41,7 +51,12 @@ export function useVisualize(): UseVisualizeResult {
   const generate = useCallback(
     async (
       videoId: string,
-      opts?: { pageNumber?: string | number; cookie?: string; topic?: string }
+      opts?: {
+        pageNumber?: string | number
+        cookie?: string
+        topic?: string
+        transcript?: TranscriptItem[]
+      },
     ) => {
       const cacheKey = `${CACHE_PREFIX}${videoId}_${opts?.pageNumber || 1}`
       if (typeof window !== 'undefined') {
@@ -71,8 +86,10 @@ export function useVisualize(): UseVisualizeResult {
           body: JSON.stringify({
             videoId,
             pageNumber: opts?.pageNumber,
-            cookie: opts?.cookie,
             topic: opts?.topic,
+            // 统一字幕入口：任意平台字幕经前端转换后直接传给服务端
+            transcript: opts?.transcript,
+            // cookie 参数仅为兼容旧调用保留；服务端改用 httpOnly 会话，忽略 body.cookie
           }),
         })
         if (!res.ok) {
@@ -80,7 +97,7 @@ export function useVisualize(): UseVisualizeResult {
           throw new Error(data.errorMessage || `请求失败（${res.status}）`)
         }
 
-        // 流式积累
+        // 服务端已净化，这里只做累积与容错提取
         const reader = res.body?.getReader()
         const decoder = new TextDecoder()
         let full = ''
@@ -100,7 +117,8 @@ export function useVisualize(): UseVisualizeResult {
           throw new Error('生成的内容不包含有效 HTML')
         }
         setHtml(parsed)
-        if (typeof window !== 'undefined') {
+        // 写 localStorage 前检查大小上限，超限静默跳过
+        if (typeof window !== 'undefined' && parsed.length <= MAX_CACHE_VALUE_CHARS) {
           try {
             localStorage.setItem(cacheKey, parsed)
           } catch {
@@ -114,7 +132,7 @@ export function useVisualize(): UseVisualizeResult {
         setStreaming(false)
       }
     },
-    []
+    [],
   )
 
   const reset = useCallback(() => {

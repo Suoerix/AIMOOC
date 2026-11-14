@@ -14,6 +14,7 @@ import {
   Cpu,
   BarChart3,
   LayoutGrid,
+  Layers,
   User,
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
@@ -37,6 +38,7 @@ const LINKS = [
   { href: '/history', label: '学习历史', icon: History, key: 'history' },
   { href: '/notes', label: '笔记', icon: StickyNote, key: 'notes' },
   { href: '/progress', label: '进度', icon: Gauge, key: 'progress' },
+  { href: '/features', label: '功能全览', icon: Layers, key: 'features' },
   { href: '/tech', label: '技术栈', icon: Cpu, key: 'tech' },
   { href: '/admin', label: '后台', icon: BarChart3, key: 'admin' },
 ]
@@ -76,9 +78,7 @@ export function Nav({ active }: NavProps) {
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/30 to-violet-500/30">
               <GraduationCap className="h-[18px] w-[18px] text-cyan-200" />
             </span>
-            <span className="hidden text-sm font-semibold tracking-wide text-slate-100 sm:block">
-              弘识智教
-            </span>
+            <span className="hidden text-sm font-semibold tracking-wide text-slate-100 sm:block">弘识智教</span>
           </Link>
 
           {/* 桌面导航 */}
@@ -91,7 +91,7 @@ export function Nav({ active }: NavProps) {
                   'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] transition-colors',
                   isActive(key)
                     ? 'bg-white/[0.07] text-cyan-200'
-                    : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200'
+                    : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200',
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -141,10 +141,7 @@ export function Nav({ active }: NavProps) {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={signOut}
-                    className="cursor-pointer text-rose-300 focus:text-rose-200"
-                  >
+                  <DropdownMenuItem onClick={signOut} className="cursor-pointer text-rose-300 focus:text-rose-200">
                     <LogOut className="mr-2 h-4 w-4" /> 退出登录
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -189,7 +186,7 @@ export function Nav({ active }: NavProps) {
                       'flex items-center gap-2 rounded-xl px-3 py-2.5 text-[13px] transition-colors',
                       isActive(key)
                         ? 'bg-white/[0.07] text-cyan-200'
-                        : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200'
+                        : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200',
                     )}
                   >
                     <Icon className="h-4 w-4" />

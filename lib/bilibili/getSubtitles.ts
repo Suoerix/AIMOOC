@@ -1,17 +1,14 @@
 import { SubtitleData } from '~/lib/types'
-import { getBiliCookie } from '~/lib/bilibili/auth'
 
 export async function getBiliSubtitles(url: string): Promise<SubtitleData[]> {
   try {
+    // 凭证由服务端 httpOnly 会话自动携带，前端不再传递 cookie 字段
     const response = await fetch('/api/bilibili/subtitle', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        url,
-        cookie: getBiliCookie() || ''
-      })
+      body: JSON.stringify({ url }),
     })
 
     if (!response.ok) {

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useToast } from '~/hooks/use-toast'
 import { UserConfig, VideoConfig } from '~/lib/types'
-import { getBiliCookie } from '~/lib/bilibili/auth'
 import { RATE_LIMIT_COUNT } from '~/utils/constants'
+import type { TranscriptItem } from '~/lib/video/types'
 
 export function useSummarize(showSingIn: (show: boolean) => void, enableStream: boolean = true) {
   const [loading, setLoading] = useState(false)
@@ -13,7 +13,8 @@ export function useSummarize(showSingIn: (show: boolean) => void, enableStream: 
     setSummary('')
   }
 
-  const summarize = async (videoConfig: VideoConfig, userConfig: UserConfig) => {
+  // 第三参数为前端统一传入的多平台字幕；服务端改用 httpOnly 会话，不再随 body 传 cookie
+  const summarize = async (videoConfig: VideoConfig, userConfig: UserConfig, transcript?: TranscriptItem[]) => {
     setSummary('')
     setLoading(true)
 
@@ -27,7 +28,7 @@ export function useSummarize(showSingIn: (show: boolean) => void, enableStream: 
         body: JSON.stringify({
           videoConfig,
           userConfig,
-          cookie: getBiliCookie() || '',
+          transcript,
         }),
       })
 
@@ -62,7 +63,7 @@ export function useSummarize(showSingIn: (show: boolean) => void, enableStream: 
           toast({
             variant: 'destructive',
             title: response.status + ' ' + response.statusText,
-            // ReadableStream can't get error message
+            // 服务端已脱敏，这里只展示通用文案
             description: errorJson.errorMessage,
           })
         }

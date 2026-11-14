@@ -1,6 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServerSupabaseClient } from '@supabase/auth-helpers-nextjs'
 import { getServiceClient, isAdminUser } from '~/lib/supabase/server'
+import { isSupabaseConfigured } from '~/lib/supabase/client'
+import { methodAllowed, rejectMethod, logInternalError, publicError } from '~/lib/security/request'
 
 export const maxDuration = 30
 
@@ -76,142 +79,151 @@ function buildDemoStats(): AdminStats {
   }
 }
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ errorMessage: 'Method not allowed' })
+/** admin_stats() RPC 返回的聚合结构（数据库端算好，不拉明细行） */
+interface AdminStatsAggregate {
+  users?: number
+  sessions?: number
+  total_sec?: number
+  total_hours?: number
+  avg_session_min?: number
+  today_active?: number
+  daily?: { label: string; value: number }[]
+  dau?: { label: string; value: number }[]
+  top_content?: { label: string; value: number; sub?: string }[]
+  subjects?: { label: string; value: number }[]
+}
+
+/** 把数据库聚合结果映射成前端图表使用的响应结构（保持字段结构兼容） */
+function fromAggregate(row: AdminStatsAggregate): AdminStats {
+  const sessions = Number(row.sessions) || 0
+  const totalSec = Number(row.total_sec) || 0
+  return {
+    demo: false,
+    generatedAt: new Date().toISOString(),
+    totals: {
+      users: Number(row.users) || 0,
+      sessions,
+      totalHours: row.total_hours != null ? Number(row.total_hours) : Math.round((totalSec / 3600) * 10) / 10,
+      todayActive: Number(row.today_active) || 0,
+      avgSessionMin:
+        row.avg_session_min != null
+          ? Number(row.avg_session_min)
+          : sessions
+          ? Math.round((totalSec / 60 / sessions) * 10) / 10
+          : 0,
+    },
+    daily: Array.isArray(row.daily) ? row.daily : [],
+    dau: Array.isArray(row.dau) ? row.dau : [],
+    topContent: Array.isArray(row.top_content) ? row.top_content : [],
+    subjects: Array.isArray(row.subjects) ? row.subjects : [],
+  }
+}
+
+/**
+ * RPC 不可用时的降级：只做 head-count 查询（PostgREST 不返回任何行）拼出精简统计，
+ * 绝不像旧实现那样把最多 5000 行 study_events 拉进应用层内存聚合。
+ * 需要 group by 的 topContent / subjects 用 count 查询无法得到，返回空数组。
+ */
+async function buildFallbackStats(service: SupabaseClient): Promise<AdminStats> {
+  const days = 14
+  const ranges: { start: string; end: string; label: string }[] = []
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const start = new Date()
+    start.setUTCHours(0, 0, 0, 0)
+    start.setUTCDate(start.getUTCDate() - i)
+    const end = new Date(start.getTime() + 86400_000)
+    ranges.push({
+      start: start.toISOString(),
+      end: end.toISOString(),
+      label: `${start.getUTCMonth() + 1}/${start.getUTCDate()}`,
+    })
   }
 
-  // ===== 未接入 Supabase：直接返回演示数据（此时也没有真实用户数据可泄露） =====
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  const { count: users } = await service.from('user_profiles').select('*', { count: 'exact', head: true })
+
+  // 多次小范围 count 查询，彼此并行；head:true 只回计数、不拉行
+  const counts = await Promise.all(
+    ranges.map((r) =>
+      service
+        .from('study_events')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', r.start)
+        .lt('created_at', r.end),
+    ),
+  )
+
+  const daily = ranges.map((r, i) => ({ label: r.label, value: counts[i].count || 0 }))
+  // 无分组能力时用每日事件数近似趋势 / 日活，属于降级数据
+  const dau = daily.map((d) => ({ label: d.label, value: d.value }))
+  const sessions = daily.reduce((sum, d) => sum + d.value, 0)
+
+  return {
+    demo: false,
+    generatedAt: new Date().toISOString(),
+    totals: {
+      users: users || 0,
+      sessions,
+      totalHours: 0,
+      todayActive: daily.length ? daily[daily.length - 1].value : 0,
+      avgSessionMin: 0,
+    },
+    daily,
+    dau,
+    topContent: [],
+    subjects: [],
+  }
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (!methodAllowed(req, ['GET'])) {
+    const rejected = rejectMethod(['GET'])
+    return res.status(rejected.statusCode).json(rejected.body)
+  }
+
+  // ===== 未接入 Supabase：本地降级 demo 数据，不涉真实用户，不做鉴权 =====
+  if (!isSupabaseConfigured()) {
     return res.status(200).json(buildDemoStats())
   }
 
-  // ===== 管理员鉴权 =====
-  let email: string | null = null
+  // ===== 配置后：服务端 getUser() 验签 + 管理员判定，否则 403 =====
   try {
     const supabase = createServerSupabaseClient({ req, res })
     const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    email = session?.user?.email ?? null
-  } catch {
-    /* 未登录 */
-  }
-
-  const admin = await isAdminUser(email)
-  if (!admin) {
-    return res.status(403).json({
-      errorMessage: '需要管理员权限',
-      hint: '将管理员邮箱加入环境变量 SUPABASE_ADMIN_EMAILS，或在 user_profiles 表中把 role 设为 admin',
-    })
+      data: { user },
+      error,
+    } = await supabase.auth.getUser()
+    if (error) logInternalError('admin.stats.getUser', error)
+    const admin = await isAdminUser(user ? { id: user.id, email: user.email } : null)
+    if (!admin) {
+      return res.status(403).json({ errorMessage: '需要管理员权限' })
+    }
+  } catch (error) {
+    logInternalError('admin.stats.auth', error)
+    return res.status(403).json({ errorMessage: '需要管理员权限' })
   }
 
   const service = getServiceClient()
   if (!service) {
+    // 已通过鉴权但未配置 service role：无法读真实数据，显式降级为 demo
+    logInternalError('admin.stats', 'SUPABASE_SERVICE_ROLE_KEY 未配置')
     return res.status(200).json(buildDemoStats())
   }
 
   try {
-    const days = 14
-    const since = new Date(Date.now() - days * 86400_000).toISOString()
-
-    const [{ data: events }, { count: users }] = await Promise.all([
-      service
-        .from('study_events')
-        .select('user_id, video_id, title, subject, duration_sec, created_at')
-        .gte('created_at', since)
-        .limit(5000),
-      service.from('user_profiles').select('*', { count: 'exact', head: true }),
-    ])
-
-    const rows = events || []
-    const dailyMap = new Map<string, number>()
-    const dauMap = new Map<string, Set<string>>()
-    const topMap = new Map<string, { label: string; value: number; subject: string; count: number }>()
-    const subjectMap = new Map<string, number>()
-
-    const todayKey = new Date().toISOString().slice(0, 10)
-    let totalSec = 0
-    let todayActive = 0
-    const todayUsers = new Set<string>()
-
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date()
-      d.setDate(d.getDate() - i)
-      const key = d.toISOString().slice(0, 10)
-      dailyMap.set(key, 0)
-      dauMap.set(key, new Set())
-    }
-
-    for (const row of rows as Record<string, any>[]) {
-      const key = String(row.created_at).slice(0, 10)
-      const minutes = (Number(row.duration_sec) || 0) / 60
-      totalSec += Number(row.duration_sec) || 0
-
-      if (dailyMap.has(key)) {
-        dailyMap.set(key, (dailyMap.get(key) || 0) + minutes)
-        if (row.user_id) dauMap.get(key)?.add(row.user_id)
+    // 首选：数据库端 SECURITY DEFINER 聚合函数，应用层只拿聚合 JSON，不拉明细行
+    const { data, error } = await service.rpc('admin_stats')
+    if (!error && data) {
+      const row = (Array.isArray(data) ? data[0] : data) as unknown as AdminStatsAggregate
+      if (row && typeof row === 'object') {
+        return res.status(200).json(fromAggregate(row))
       }
-      if (key === todayKey && row.user_id) todayUsers.add(row.user_id)
-
-      const vid = String(row.video_id || 'unknown')
-      const title = String(row.title || vid)
-      const prev = topMap.get(vid)
-      if (prev) {
-        prev.value += minutes
-        prev.count += 1
-      } else {
-        topMap.set(vid, { label: title, value: minutes, subject: row.subject || '', count: 1 })
-      }
-
-      const subject = row.subject || '未分类'
-      subjectMap.set(subject, (subjectMap.get(subject) || 0) + minutes)
     }
+    if (error) logInternalError('admin.stats.rpc', error)
 
-    todayActive = todayUsers.size
-
-    const daily = Array.from(dailyMap.entries()).map(([key, value]) => ({
-      label: `${Number(key.slice(5, 7))}/${Number(key.slice(8, 10))}`,
-      value: Math.round(value),
-    }))
-    const dau = Array.from(dauMap.entries()).map(([key, set]) => ({
-      label: `${Number(key.slice(5, 7))}/${Number(key.slice(8, 10))}`,
-      value: set.size,
-    }))
-
-    const topContent = Array.from(topMap.values())
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 10)
-      .map((t) => ({
-        label: t.label,
-        value: Math.round(t.value),
-        sub: t.subject ? `${t.subject} · ${t.count} 次学习` : `${t.count} 次学习`,
-      }))
-
-    const subjects = Array.from(subjectMap.entries())
-      .map(([label, value]) => ({ label, value: Math.round(value) }))
-      .sort((a, b) => b.value - a.value)
-
-    return res.status(200).json({
-      demo: false,
-      generatedAt: new Date().toISOString(),
-      totals: {
-        users: users || 0,
-        sessions: rows.length,
-        totalHours: Math.round((totalSec / 3600) * 10) / 10,
-        todayActive,
-        avgSessionMin: rows.length ? Math.round((totalSec / 60 / rows.length) * 10) / 10 : 0,
-      },
-      daily,
-      dau,
-      topContent,
-      subjects,
-    } satisfies AdminStats)
+    // RPC 不可用：退回小范围 count 查询，绝不拉 5000 行到内存
+    return res.status(200).json(await buildFallbackStats(service))
   } catch (error) {
-    console.error('admin stats error:', error)
-    return res.status(500).json({ errorMessage: '统计数据读取失败' })
+    logInternalError('admin.stats', error)
+    return res.status(500).json({ errorMessage: publicError() })
   }
 }
