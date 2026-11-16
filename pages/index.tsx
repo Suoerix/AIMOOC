@@ -2,7 +2,8 @@ import { NextPage } from 'next'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { motion, AnimatePresence } from 'framer-motion'
-import { GraduationCap, BookOpen, Mic2, Eye } from 'lucide-react'
+import { GraduationCap, BookOpen, Mic2, Eye, ArrowRight } from 'lucide-react'
+import Link from 'next/link'
 import { Nav } from '~/components/Nav'
 import { AuroraBackground } from '~/components/Home/AuroraBackground'
 import { ChatEntry } from '~/components/Home/ChatEntry'
@@ -128,6 +129,30 @@ const HomePage: NextPage = () => {
             className="flex w-full justify-center"
           >
             <ChatEntry onOpenCase={openCase} />
+          </motion.div>
+        </section>
+
+        {/* ============ 课程体系 CTA ============ */}
+        <section className="py-10">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="glass-strong mx-auto flex max-w-3xl flex-col items-center gap-4 rounded-2xl p-6 text-center"
+          >
+            <BookOpen className="h-8 w-8 text-cyan-300" />
+            <h3 className="text-xl font-semibold text-slate-100">把一整个合集，变成一门课</h3>
+            <p className="max-w-xl text-sm text-slate-400">
+              粘贴 B站合集 / YouTube 播放列表，或一串视频链接，自动生成带学习路径的课程。每一集都接入 AI 教室（总结 / 课件 / 出题 / 助教）。
+            </p>
+            <Link
+              href="/courses"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-cyan-500/30 transition hover:scale-[1.02]"
+            >
+              开始构建课程
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </motion.div>
         </section>
 
