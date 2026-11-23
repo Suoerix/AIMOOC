@@ -82,8 +82,14 @@ export default function BilibiliLogin({ show, onClose }: BilibiliLoginProps) {
   useEffect(() => {
     if (!qrcodeKey) return
     let stopped = false
+    let inFlight = false
 
     const poll = async () => {
+      // 同一时刻只允许一个轮询请求在飞：B 站二维码 key 一旦被消费，
+      // 后续 poll 会立刻返回 86038(已失效)，并发的旧请求若先返回
+      // 会把界面误判成「二维码已过期」，覆盖掉真正的 success。
+      if (inFlight) return
+      inFlight = true
       try {
         const response = await fetch(
           `/api/bilibili/login/poll?key=${encodeURIComponent(qrcodeKey)}`
@@ -93,9 +99,12 @@ export default function BilibiliLogin({ show, onClose }: BilibiliLoginProps) {
 
         if (stopped) return
 
-        if (data.status === 'success' && data.cookie) {
+        // 凭证已改为 httpOnly 会话 Cookie 下发，响应体里不再有 cookie 字段，
+        // 只按 status 判定；user 仅用于展示。
+        if (data.status === 'success') {
           stopped = true
-          setBiliAuth(data.cookie, data.user as LoginUser)
+          setBiliAuth(data.user as LoginUser)
+          setPollStatus('idle')
           toast({
             title: 'B站登录成功',
             description: data.user?.uname ? `欢迎，${data.user.uname}` : undefined,
@@ -108,6 +117,8 @@ export default function BilibiliLogin({ show, onClose }: BilibiliLoginProps) {
         }
       } catch (error) {
         console.error('轮询扫码状态失败:', error)
+      } finally {
+        inFlight = false
       }
     }
 
@@ -140,7 +151,9 @@ export default function BilibiliLogin({ show, onClose }: BilibiliLoginProps) {
       })
       const data = await response.json()
 
-      if (!response.ok || !data.loggedIn) {
+      // 成功响应的字段是 { status: 'success', user }，凭证在 httpOnly Cookie 里；
+      // 仅当接口明确返回 success 才算登录成功（凭证无效时返回 { loggedIn: false }）。
+      if (!response.ok || data.status !== 'success' || !data.user) {
         toast({
           title: '凭证无效',
           description: '请检查 SESSDATA / Cookie 是否正确或已过期',
@@ -149,7 +162,7 @@ export default function BilibiliLogin({ show, onClose }: BilibiliLoginProps) {
         return
       }
 
-      setBiliAuth(data.cookie, data.user)
+      setBiliAuth(data.user)
       setManualInput('')
       toast({
         title: 'B站登录成功',
