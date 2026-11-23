@@ -50,13 +50,16 @@
     "react-hook-form-persist": "^3.0.0",
     "react-hot-toast": "^2.4.0",
     "react-type-animation": "^2.1.2",
-    "sanitize-html": "^2.18.2",
+    "sanitize-html": "2.18.2",
     "tailwind-merge": "^1.14.0",
     "tailwindcss-animate": "^1.0.7",
     "undici": "^8.12.3",
     "ws": "^8.22.1",
     "zod": "^3.21.4",
     "youtube-transcript": "^1.2.0"
+  },
+  "overrides": {
+    "htmlparser2": "9.1.0"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.2",

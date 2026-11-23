@@ -59,6 +59,20 @@ export function logInternalError(scope: string, error: unknown): void {
   logger.error(scope, error instanceof Error ? `${error.name}: ${error.message}` : String(error))
 }
 
+/**
+ * 匿名访客调用 supabase.auth.getUser() 时会返回 AuthSessionMissingError，
+ * 这是「未登录」这一正常分支，不是故障；记成 ERROR 会污染错误看板、干扰排障。
+ */
+export function isMissingAuthSession(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const name = (error as { name?: unknown }).name
+  const message = (error as { message?: unknown }).message
+  return (
+    name === 'AuthSessionMissingError' ||
+    (typeof message === 'string' && /auth session missing/i.test(message))
+  )
+}
+
 export function publicError(fallback = '服务暂时不可用，请稍后重试'): string {
   return fallback
 }

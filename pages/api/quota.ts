@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { createServerSupabaseClient } from '@supabase/auth-helpers-nextjs'
 import { peekQuota, QUOTA_LIMITS, type QuotaTier } from '~/lib/quota'
 import { isSupabaseConfigured } from '~/lib/supabase/client'
-import { clientIpKey, methodAllowed, rejectMethod, logInternalError, publicError } from '~/lib/security/request'
+import { clientIpKey, methodAllowed, rejectMethod, logInternalError, publicError, isMissingAuthSession } from '~/lib/security/request'
 
 export const maxDuration = 15
 
@@ -30,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         data: { user },
         error,
       } = await supabase.auth.getUser()
-      if (error) logInternalError('quota.getUser', error)
+      if (error && !isMissingAuthSession(error)) logInternalError('quota.getUser', error)
       if (user?.id) {
         tier = 'user'
         // 登录用验签后的 user.id（不再用 email），与 middleware 的 key 对齐

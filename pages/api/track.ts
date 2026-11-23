@@ -3,7 +3,7 @@ import { createServerSupabaseClient } from '@supabase/auth-helpers-nextjs'
 import { getServiceClient } from '~/lib/supabase/server'
 import { isSupabaseConfigured } from '~/lib/supabase/client'
 import { validateTrackEvent } from '~/lib/security/input'
-import { methodAllowed, rejectMethod, isBodyTooLarge, logInternalError, publicError } from '~/lib/security/request'
+import { methodAllowed, rejectMethod, isBodyTooLarge, logInternalError, publicError, isMissingAuthSession } from '~/lib/security/request'
 
 export const maxDuration = 30
 
@@ -37,7 +37,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       data: { user: verified },
       error,
     } = await supabase.auth.getUser()
-    if (error) logInternalError('track.getUser', error)
+    if (error && !isMissingAuthSession(error)) logInternalError('track.getUser', error)
     if (verified?.id) {
       user = { id: verified.id, email: verified.email }
     }
